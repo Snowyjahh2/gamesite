@@ -176,6 +176,8 @@ function startDiscussion(code) {
   if (!room) return;
   room.state = 'discussion';
   room.discussionEndsAt = Date.now() + room.timerSecs * 1000;
+  // Reset per-round vote-ready flags.
+  Object.values(room.players).forEach((p) => { p.wantsVote = false; });
   broadcastRoom(code);
 
   if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
@@ -183,6 +185,19 @@ function startDiscussion(code) {
     const r = rooms.get(code);
     if (r && r.state === 'discussion') revealSpy(code);
   }, room.timerSecs * 1000);
+}
+
+function toggleVoteRequest(code, socketId) {
+  const room = rooms.get(code);
+  if (!room || room.state !== 'discussion') return;
+  if (!room.players[socketId]) return;
+  room.players[socketId].wantsVote = !room.players[socketId].wantsVote;
+  broadcastRoom(code);
+
+  const all = Object.values(room.players);
+  if (all.length >= 3 && all.every((p) => p.wantsVote)) {
+    revealSpy(code);
+  }
 }
 
 function revealSpy(code) {
@@ -301,6 +316,12 @@ io.on('connection', (socket) => {
     if (room.host !== socket.id) return;
     if (room.state !== 'discussion') return;
     revealSpy(code);
+  });
+
+  socket.on('requestVote', () => {
+    const found = findRoomForSocket(socket.id);
+    if (!found) return;
+    toggleVoteRequest(found.code, socket.id);
   });
 
   socket.on('declareWinner', (payload = {}) => {

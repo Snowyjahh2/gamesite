@@ -221,9 +221,20 @@ function renderDiscussion(room, players, isHost) {
   ol.innerHTML = '';
   players.forEach((p) => {
     const li = document.createElement('li');
-    li.textContent = p.name;
+    li.textContent = p.name + (p.wantsVote ? '  ✓' : '');
+    if (p.wantsVote) li.classList.add('ready-to-vote');
     ol.appendChild(li);
   });
+
+  const me = room.players[myId];
+  const myVoted = !!(me && me.wantsVote);
+  const voteBtn = el('vote-btn');
+  voteBtn.textContent = myVoted ? 'Cancel vote' : 'Vote';
+  voteBtn.classList.toggle('voted', myVoted);
+
+  const votedCount = players.filter((p) => p.wantsVote).length;
+  el('vote-count').textContent = votedCount;
+  el('vote-total').textContent = players.length;
 
   el('disc-host-controls').hidden = !isHost;
   startTimerTick(room);
@@ -256,6 +267,10 @@ function stopTimerTick() {
 
 el('reveal-spy-btn').addEventListener('click', () => {
   socket.emit('endDiscussion');
+});
+
+el('vote-btn').addEventListener('click', () => {
+  socket.emit('requestVote');
 });
 
 // ---------- Results ----------

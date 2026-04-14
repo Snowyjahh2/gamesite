@@ -718,6 +718,26 @@ main {
 }
 
 .turn-order li { padding: 3px 0; }
+.turn-order li.ready-to-vote { color: var(--good); }
+
+.vote-row {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.vote-row .btn { width: 100%; }
+
+.vote-row .btn.voted {
+  background: linear-gradient(135deg, #3fd97e, #2ca85e);
+  box-shadow: 0 10px 30px rgba(63, 217, 126, 0.35), 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+.vote-row .btn.voted::before {
+  content: '✓ ';
+}
 
 /* ---------- Voting ---------- */
 
