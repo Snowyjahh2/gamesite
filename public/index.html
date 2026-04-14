@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0b1a" />
+<title>Word Spy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="page-landing">
+  <div class="bg-stars" aria-hidden="true"></div>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="landing">
+    <header class="brand">
+      <div class="brand-mark">
+        <span class="brand-eye"></span>
+      </div>
+      <h1>Word <span class="accent">Spy</span></h1>
+      <p class="tagline">Everyone gets a word. One of you gets a different one. Find the impostor.</p>
+    </header>
+
+    <section class="card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="create" role="tab" aria-selected="true">Create room</button>
+        <button class="tab" data-tab="join" role="tab" aria-selected="false">Join room</button>
+      </div>
+
+      <form class="panel active" id="create-panel" data-panel="create" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Your name</span>
+          <input type="text" id="create-name" maxlength="16" placeholder="e.g. Alex" required />
+        </label>
+
+        <label class="field">
+          <span class="field-label">Room size <em id="size-label">6</em></span>
+          <input type="range" id="create-size" min="3" max="12" value="6" />
+          <div class="range-ticks"><span>3</span><span>12</span></div>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Discussion timer <em id="timer-label">2:00</em></span>
+          <input type="range" id="create-timer" min="30" max="300" step="15" value="120" />
+          <div class="range-ticks"><span>0:30</span><span>5:00</span></div>
+        </label>
+
+        <label class="field-check">
+          <input type="checkbox" id="create-hints" checked />
+          <span>Show category hint to all players</span>
+        </label>
+
+        <button class="btn btn-primary" type="submit">Create room</button>
+      </form>
+
+      <form class="panel" id="join-panel" data-panel="join" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Your name</span>
+          <input type="text" id="join-name" maxlength="16" placeholder="e.g. Sam" required />
+        </label>
+
+        <label class="field">
+          <span class="field-label">Room code</span>
+          <input type="text" id="join-code" maxlength="5" placeholder="ABCD" inputmode="latin" autocapitalize="characters" required />
+        </label>
+
+        <button class="btn btn-primary" type="submit">Join room</button>
+      </form>
+
+      <p class="error" id="landing-error" hidden></p>
+    </section>
+
+    <footer class="foot">
+      <span>Play with 3–12 friends on any device.</span>
+    </footer>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="js/index.js"></script>
+</body>
+</html>

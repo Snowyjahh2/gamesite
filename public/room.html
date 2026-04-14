@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0b1a" />
+<title>Word Spy — Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="page-room">
+  <div class="bg-stars" aria-hidden="true"></div>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="room">
+    <header class="room-header">
+      <a href="index.html" class="leave" id="leave-btn">← Leave</a>
+      <div class="room-code-block">
+        <span class="room-code-label">Room code</span>
+        <span class="room-code" id="room-code">----</span>
+        <button class="copy-btn" id="copy-code" title="Copy code">Copy</button>
+      </div>
+      <div class="round-badge" id="round-badge">Round 1</div>
+    </header>
+
+    <!-- LOBBY -->
+    <section class="view" id="view-lobby">
+      <div class="card card-wide">
+        <h2>Lobby</h2>
+        <p class="muted">Waiting for players. The host can start when everyone's in (min 3).</p>
+        <ul class="players" id="lobby-players"></ul>
+        <div class="host-only" id="lobby-host-controls" hidden>
+          <button class="btn btn-primary" id="start-btn" disabled>Start game</button>
+        </div>
+        <p class="muted small" id="lobby-wait-msg">Only the host can start the game.</p>
+      </div>
+    </section>
+
+    <!-- WORD REVEAL -->
+    <section class="view" id="view-reveal" hidden>
+      <div class="card card-center">
+        <h2>Your secret word</h2>
+        <p class="muted">Tap to reveal. Don't let anyone see.</p>
+        <div class="reveal-card" id="reveal-card">
+          <div class="reveal-front">
+            <div class="reveal-front-inner">
+              <span class="reveal-tap">Tap to reveal</span>
+            </div>
+          </div>
+          <div class="reveal-back">
+            <div class="reveal-role" id="reveal-role">Civilian</div>
+            <div class="reveal-word" id="reveal-word">word</div>
+            <div class="reveal-hint" id="reveal-hint"></div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="ready-btn">I'm ready</button>
+        <p class="muted small"><span id="ready-count">0</span> / <span id="ready-total">0</span> ready</p>
+      </div>
+    </section>
+
+    <!-- DISCUSSION -->
+    <section class="view" id="view-discussion" hidden>
+      <div class="card card-center">
+        <h2>Discussion</h2>
+        <p class="muted">Take turns. Give a vague clue about your word. Find the spy.</p>
+        <div class="timer" id="timer">2:00</div>
+        <div class="timer-bar"><div class="timer-bar-fill" id="timer-fill"></div></div>
+        <div class="turn-order">
+          <span class="turn-label">Speaking order</span>
+          <ol id="turn-list"></ol>
+        </div>
+        <div class="host-only" id="disc-host-controls" hidden>
+          <button class="btn btn-secondary" id="vote-now-btn">Vote now</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VOTING -->
+    <section class="view" id="view-voting" hidden>
+      <div class="card card-wide">
+        <h2>Who's the spy?</h2>
+        <p class="muted">Tap a player. You can change until everyone votes.</p>
+        <ul class="vote-list" id="vote-list"></ul>
+        <p class="muted small"><span id="voted-count">0</span> / <span id="voted-total">0</span> voted</p>
+      </div>
+    </section>
+
+    <!-- REVEAL / RESULTS -->
+    <section class="view" id="view-results" hidden>
+      <div class="card card-wide">
+        <h2 id="results-headline">The spy was...</h2>
+        <div class="results-spy" id="results-spy">
+          <div class="results-spy-name" id="results-spy-name">—</div>
+          <div class="results-spy-word">Spy word: <span id="results-spy-word">—</span></div>
+          <div class="results-civ-word">Civilian word: <span id="results-civ-word">—</span></div>
+        </div>
+        <div class="results-outcome" id="results-outcome"></div>
+        <ul class="scoreboard" id="scoreboard"></ul>
+        <div class="host-only" id="results-host-controls" hidden>
+          <button class="btn btn-primary" id="next-round-btn">Next round</button>
+          <button class="btn btn-secondary" id="back-lobby-btn">Back to lobby</button>
+        </div>
+      </div>
+    </section>
+
+    <p class="error" id="room-error" hidden></p>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="js/room.js"></script>
+</body>
+</html>
