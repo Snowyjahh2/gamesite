@@ -847,7 +847,17 @@ main {
 .scoreboard li.top { border-color: rgba(255, 138, 76, 0.4); }
 .scoreboard li.top .sname::before { content: '👑 '; }
 
-#results-host-controls .btn + .btn { margin-top: 10px; }
+#results-host-controls { margin: 6px 0 14px; }
+#results-nav-controls .btn + .btn { margin-top: 10px; }
+
+.winner-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 8px 0 6px;
+}
+
+.winner-buttons .btn { width: 100%; }
 
 /* ---------- Small screens ---------- */
 

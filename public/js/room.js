@@ -108,7 +108,7 @@ socket.on('yourWord', (info) => {
 function showView(name) {
   if (lastView === name) return;
   lastView = name;
-  ['lobby', 'reveal', 'discussion', 'voting', 'results'].forEach((v) => {
+  ['lobby', 'reveal', 'discussion', 'results'].forEach((v) => {
     el(`view-${v}`).hidden = v !== name;
   });
   if (name !== 'reveal') hasFlipped = false;
@@ -134,9 +134,6 @@ function render(room) {
   } else if (room.state === 'discussion') {
     showView('discussion');
     renderDiscussion(room, players, isHost);
-  } else if (room.state === 'voting') {
-    showView('voting');
-    renderVoting(room, players);
   } else if (room.state === 'results') {
     showView('results');
     renderResults(room, players, isHost);
@@ -257,68 +254,41 @@ function stopTimerTick() {
   }
 }
 
-el('vote-now-btn').addEventListener('click', () => {
-  socket.emit('forceVote');
+el('reveal-spy-btn').addEventListener('click', () => {
+  socket.emit('endDiscussion');
 });
-
-// ---------- Voting ----------
-
-function renderVoting(room, players) {
-  stopTimerTick();
-  const votes = room.votes || {};
-  const myVote = votes[myId];
-
-  const tallies = {};
-  Object.values(votes).forEach((t) => { tallies[t] = (tallies[t] || 0) + 1; });
-
-  const ul = el('vote-list');
-  ul.innerHTML = '';
-  players.forEach((p) => {
-    const li = document.createElement('li');
-    if (p.id === myId) li.classList.add('self');
-    if (myVote === p.id) li.classList.add('selected');
-    li.innerHTML = `
-      <span class="vname">${escapeHtml(p.name)}${p.id === myId ? ' (you)' : ''}</span>
-      <span class="vcount">${tallies[p.id] || 0}</span>`;
-    li.addEventListener('click', () => {
-      if (p.id === myId) return;
-      socket.emit('vote', { targetId: p.id });
-    });
-    ul.appendChild(li);
-  });
-
-  const votedCount = Object.keys(votes).length;
-  el('voted-count').textContent = votedCount;
-  el('voted-total').textContent = players.length;
-}
 
 // ---------- Results ----------
 
 function renderResults(room, players, isHost) {
-  const votes = room.votes || {};
-  const tallies = {};
-  Object.values(votes).forEach((t) => { tallies[t] = (tallies[t] || 0) + 1; });
-  let maxVotes = 0;
-  let topIds = [];
-  for (const [id, n] of Object.entries(tallies)) {
-    if (n > maxVotes) { maxVotes = n; topIds = [id]; }
-    else if (n === maxVotes) topIds.push(id);
-  }
-  const spyCaught = topIds.length === 1 && topIds[0] === room.spyId;
-
   const spyPlayer = players.find((p) => p.id === room.spyId);
   el('results-spy-name').textContent = spyPlayer ? spyPlayer.name : 'Unknown';
   el('results-spy-word').textContent = room.spyWord || '—';
   el('results-civ-word').textContent = room.civilianWord || '—';
 
   const outcome = el('results-outcome');
-  if (spyCaught) {
-    outcome.textContent = 'Civilians win — the spy was caught!';
+  if (room.winner === 'civilians') {
+    outcome.textContent = 'Civilians won this round (+1 each).';
     outcome.className = 'results-outcome caught';
-  } else {
-    outcome.textContent = 'The spy escaped!';
+    outcome.hidden = false;
+  } else if (room.winner === 'spy') {
+    outcome.textContent = 'The spy won this round (+2).';
     outcome.className = 'results-outcome escaped';
+    outcome.hidden = false;
+  } else {
+    outcome.hidden = true;
   }
+
+  // Host win-selection buttons — only shown before a winner is picked.
+  const hostControls = el('results-host-controls');
+  hostControls.hidden = !isHost || !!room.winner;
+  const civWonBtn = el('civilians-won-btn');
+  const spyWonBtn = el('spy-won-btn');
+  if (civWonBtn) civWonBtn.disabled = !!room.winner;
+  if (spyWonBtn) spyWonBtn.disabled = !!room.winner;
+
+  // Nav buttons always visible to host (so they can advance even without scoring).
+  el('results-nav-controls').hidden = !isHost;
 
   const sb = el('scoreboard');
   sb.innerHTML = '';
@@ -330,9 +300,15 @@ function renderResults(room, players, isHost) {
     li.innerHTML = `<span class="sname">${escapeHtml(p.name)}</span><span class="sscore">${p.score || 0}</span>`;
     sb.appendChild(li);
   });
-
-  el('results-host-controls').hidden = !isHost;
 }
+
+el('civilians-won-btn').addEventListener('click', () => {
+  socket.emit('declareWinner', { winner: 'civilians' });
+});
+
+el('spy-won-btn').addEventListener('click', () => {
+  socket.emit('declareWinner', { winner: 'spy' });
+});
 
 el('next-round-btn').addEventListener('click', () => {
   socket.emit('nextRound');

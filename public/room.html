@@ -64,7 +64,7 @@
     <section class="view" id="view-discussion" hidden>
       <div class="card card-center">
         <h2>Discussion</h2>
-        <p class="muted">Take turns. Give a vague clue about your word. Find the spy.</p>
+        <p class="muted">Take turns out loud. Give a vague clue about your word. Find the spy.</p>
         <div class="timer" id="timer">2:00</div>
         <div class="timer-bar"><div class="timer-bar-fill" id="timer-fill"></div></div>
         <div class="turn-order">
@@ -72,18 +72,8 @@
           <ol id="turn-list"></ol>
         </div>
         <div class="host-only" id="disc-host-controls" hidden>
-          <button class="btn btn-secondary" id="vote-now-btn">Vote now</button>
+          <button class="btn btn-secondary" id="reveal-spy-btn">Reveal spy</button>
         </div>
-      </div>
-    </section>
-
-    <!-- VOTING -->
-    <section class="view" id="view-voting" hidden>
-      <div class="card card-wide">
-        <h2>Who's the spy?</h2>
-        <p class="muted">Tap a player. You can change until everyone votes.</p>
-        <ul class="vote-list" id="vote-list"></ul>
-        <p class="muted small"><span id="voted-count">0</span> / <span id="voted-total">0</span> voted</p>
       </div>
     </section>
 
@@ -96,9 +86,16 @@
           <div class="results-spy-word">Spy word: <span id="results-spy-word">—</span></div>
           <div class="results-civ-word">Civilian word: <span id="results-civ-word">—</span></div>
         </div>
-        <div class="results-outcome" id="results-outcome"></div>
-        <ul class="scoreboard" id="scoreboard"></ul>
         <div class="host-only" id="results-host-controls" hidden>
+          <p class="muted small">Who won this round?</p>
+          <div class="winner-buttons">
+            <button class="btn btn-secondary" id="civilians-won-btn">Civilians won</button>
+            <button class="btn btn-secondary" id="spy-won-btn">Spy won</button>
+          </div>
+        </div>
+        <div class="results-outcome" id="results-outcome" hidden></div>
+        <ul class="scoreboard" id="scoreboard"></ul>
+        <div class="host-only" id="results-nav-controls" hidden>
           <button class="btn btn-primary" id="next-round-btn">Next round</button>
           <button class="btn btn-secondary" id="back-lobby-btn">Back to lobby</button>
         </div>

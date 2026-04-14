@@ -63,8 +63,7 @@ function makeRoom(code, hostId, hostName, opts) {
     spyWord: null,
     category: null,
     discussionEndsAt: null,
-    votes: {},
-    scored: false,
+    winner: null, // 'civilians' | 'spy' | null — set by host on the results screen
     discussionTimeout: null,
   };
   rooms.set(code, room);
@@ -99,8 +98,6 @@ function publicView(room) {
     round: room.round,
     players: room.players,
     discussionEndsAt: room.discussionEndsAt,
-    // Votes visible during voting and results.
-    votes: (room.state === 'voting' || room.state === 'results') ? { ...room.votes } : {},
     // Category shown to all if the host enabled it and a round is active.
     category: room.showHint && room.state !== 'lobby' ? room.category : null,
   };
@@ -109,6 +106,7 @@ function publicView(room) {
     v.spyId = room.spyId;
     v.civilianWord = room.civilianWord;
     v.spyWord = room.spyWord;
+    v.winner = room.winner;
   }
   return v;
 }
@@ -138,9 +136,8 @@ function startRound(code) {
   room.civilianWord = pair.civilian;
   room.spyWord = pair.spy;
   room.spyId = spyId;
-  room.votes = {};
   room.discussionEndsAt = null;
-  room.scored = false;
+  room.winner = null;
   if (room.discussionTimeout) {
     clearTimeout(room.discussionTimeout);
     room.discussionTimeout = null;
@@ -184,62 +181,40 @@ function startDiscussion(code) {
   if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
   room.discussionTimeout = setTimeout(() => {
     const r = rooms.get(code);
-    if (r && r.state === 'discussion') startVoting(code);
+    if (r && r.state === 'discussion') revealSpy(code);
   }, room.timerSecs * 1000);
 }
 
-function startVoting(code) {
+function revealSpy(code) {
   const room = rooms.get(code);
   if (!room) return;
+  if (room.state !== 'discussion') return;
   if (room.discussionTimeout) {
     clearTimeout(room.discussionTimeout);
     room.discussionTimeout = null;
   }
-  room.state = 'voting';
-  room.votes = {};
-  broadcastRoom(code);
-}
-
-function castVote(code, voterId, targetId) {
-  const room = rooms.get(code);
-  if (!room || room.state !== 'voting') return;
-  if (!room.players[voterId] || !room.players[targetId]) return;
-  if (voterId === targetId) return;
-  room.votes[voterId] = targetId;
-  broadcastRoom(code);
-
-  const allVoted = Object.keys(room.players).every((id) => room.votes[id]);
-  if (allVoted) finishRound(code);
-}
-
-function finishRound(code) {
-  const room = rooms.get(code);
-  if (!room || room.state !== 'voting') return;
   room.state = 'results';
+  room.winner = null; // host picks a winner on the results screen (optional)
+  broadcastRoom(code);
+}
 
-  if (!room.scored) {
-    const tallies = {};
-    Object.values(room.votes).forEach((t) => { tallies[t] = (tallies[t] || 0) + 1; });
-    let max = 0;
-    let topIds = [];
-    for (const [id, n] of Object.entries(tallies)) {
-      if (n > max) { max = n; topIds = [id]; }
-      else if (n === max) topIds.push(id);
-    }
-    const spyCaught = topIds.length === 1 && topIds[0] === room.spyId;
+function declareWinner(code, socketId, winner) {
+  const room = rooms.get(code);
+  if (!room || room.state !== 'results') return;
+  if (room.host !== socketId) return;
+  if (winner !== 'civilians' && winner !== 'spy') return;
+  if (room.winner) return; // already scored this round
 
-    if (spyCaught) {
-      Object.keys(room.players).forEach((id) => {
-        if (id !== room.spyId) {
-          room.players[id].score = (room.players[id].score || 0) + 1;
-        }
-      });
-    } else if (room.players[room.spyId]) {
-      room.players[room.spyId].score = (room.players[room.spyId].score || 0) + 2;
-    }
-    room.scored = true;
+  if (winner === 'civilians') {
+    Object.keys(room.players).forEach((id) => {
+      if (id !== room.spyId) {
+        room.players[id].score = (room.players[id].score || 0) + 1;
+      }
+    });
+  } else if (room.players[room.spyId]) {
+    room.players[room.spyId].score = (room.players[room.spyId].score || 0) + 2;
   }
-
+  room.winner = winner;
   broadcastRoom(code);
 }
 
@@ -252,9 +227,8 @@ function backToLobby(code, socketId) {
   room.civilianWord = null;
   room.spyWord = null;
   room.category = null;
-  room.votes = {};
   room.discussionEndsAt = null;
-  room.scored = false;
+  room.winner = null;
   if (room.discussionTimeout) {
     clearTimeout(room.discussionTimeout);
     room.discussionTimeout = null;
@@ -320,19 +294,19 @@ io.on('connection', (socket) => {
     markReady(found.code, socket.id);
   });
 
-  socket.on('forceVote', () => {
+  socket.on('endDiscussion', () => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
     const { code, room } = found;
     if (room.host !== socket.id) return;
     if (room.state !== 'discussion') return;
-    startVoting(code);
+    revealSpy(code);
   });
 
-  socket.on('vote', (payload = {}) => {
+  socket.on('declareWinner', (payload = {}) => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
-    castVote(found.code, socket.id, String(payload.targetId || ''));
+    declareWinner(found.code, socket.id, payload.winner);
   });
 
   socket.on('nextRound', () => {
@@ -375,14 +349,6 @@ function handleLeave(socket) {
   if (room.host === socket.id) {
     remaining.sort((a, b) => room.players[a].joinedAt - room.players[b].joinedAt);
     room.host = remaining[0];
-  }
-  // If we were in voting and the leaver's absence completes voting, resolve it.
-  if (room.state === 'voting') {
-    const allVoted = remaining.every((id) => room.votes[id]);
-    if (allVoted) {
-      finishRound(code);
-      return;
-    }
   }
   broadcastRoom(code);
 }
