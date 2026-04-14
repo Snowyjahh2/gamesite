@@ -30,6 +30,7 @@ let hasFlipped = false;
 let timerInterval = null;
 let lastView = null;
 let joined = false;
+let localMyVote = null; // my currently selected voting target (UI highlight only)
 
 // ---------- UI boot ----------
 
@@ -108,10 +109,11 @@ socket.on('yourWord', (info) => {
 function showView(name) {
   if (lastView === name) return;
   lastView = name;
-  ['lobby', 'reveal', 'discussion', 'results'].forEach((v) => {
+  ['lobby', 'reveal', 'discussion', 'voting', 'results'].forEach((v) => {
     el(`view-${v}`).hidden = v !== name;
   });
   if (name !== 'reveal') hasFlipped = false;
+  if (name !== 'discussion' && name !== 'voting') stopTimerTick();
 }
 
 function sortedPlayers(room) {
@@ -134,6 +136,9 @@ function render(room) {
   } else if (room.state === 'discussion') {
     showView('discussion');
     renderDiscussion(room, players, isHost);
+  } else if (room.state === 'voting') {
+    showView('voting');
+    renderVoting(room, players);
   } else if (room.state === 'results') {
     showView('results');
     renderResults(room, players, isHost);
@@ -237,21 +242,24 @@ function renderDiscussion(room, players, isHost) {
   el('vote-total').textContent = players.length;
 
   el('disc-host-controls').hidden = !isHost;
-  startTimerTick(room);
+  startTimerTick(
+    room.discussionEndsAt,
+    (room.timerSecs || 120) * 1000,
+    el('timer'),
+    el('timer-fill')
+  );
 }
 
-function startTimerTick(room) {
+function startTimerTick(endsAt, totalMs, timerEl, fillEl) {
   stopTimerTick();
-  const endsAt = room.discussionEndsAt;
-  const total = (room.timerSecs || 120) * 1000;
   const tick = () => {
     const remaining = Math.max(0, (endsAt || 0) - Date.now());
     const secs = Math.ceil(remaining / 1000);
     const m = Math.floor(secs / 60);
     const s = secs % 60;
-    el('timer').textContent = `${m}:${s.toString().padStart(2, '0')}`;
-    el('timer').classList.toggle('low', secs <= 10);
-    el('timer-fill').style.width = `${Math.max(0, (remaining / total) * 100)}%`;
+    timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    timerEl.classList.toggle('low', secs <= 10);
+    if (fillEl) fillEl.style.width = `${Math.max(0, (remaining / totalMs) * 100)}%`;
     if (remaining <= 0) stopTimerTick(); // server will advance state
   };
   tick();
@@ -273,36 +281,77 @@ el('vote-btn').addEventListener('click', () => {
   socket.emit('requestVote');
 });
 
+// ---------- Voting ----------
+
+function renderVoting(room, players) {
+  // Tie banner.
+  const banner = el('tie-banner');
+  if (room.tieCount && room.tieCount > 0) {
+    banner.textContent = `Tie — revote! (try ${room.tieCount + 1})`;
+    banner.hidden = false;
+  } else {
+    banner.hidden = true;
+  }
+
+  const voters = new Set(room.voters || []);
+  const myVote = null; // server doesn't echo my vote back; track locally instead.
+  // We still want to highlight the cell I tapped locally. Use localMyVote.
+
+  const ul = el('vote-list');
+  ul.innerHTML = '';
+  players.forEach((p) => {
+    const li = document.createElement('li');
+    if (p.id === myId) li.classList.add('self');
+    if (localMyVote === p.id) li.classList.add('selected');
+    const votedBadge = voters.has(p.id) ? '<span class="vcount">voted</span>' : '';
+    li.innerHTML = `
+      <span class="vname">${escapeHtml(p.name)}${p.id === myId ? ' (you)' : ''}</span>
+      ${votedBadge}`;
+    li.addEventListener('click', () => {
+      if (p.id === myId) return;
+      localMyVote = p.id;
+      socket.emit('castVote', { targetId: p.id });
+      renderVoting(currentRoom, sortedPlayers(currentRoom));
+    });
+    ul.appendChild(li);
+  });
+
+  el('voted-count').textContent = voters.size;
+  el('voted-total').textContent = players.length;
+
+  startTimerTick(
+    room.votingEndsAt,
+    15 * 1000,
+    el('voting-timer'),
+    el('voting-timer-fill')
+  );
+}
+
+// Reset per-phase local state whenever we leave voting.
+function resetLocalVote() { localMyVote = null; }
+
 // ---------- Results ----------
 
 function renderResults(room, players, isHost) {
   const spyPlayer = players.find((p) => p.id === room.spyId);
-  el('results-spy-name').textContent = spyPlayer ? spyPlayer.name : 'Unknown';
+  const accusedPlayer = players.find((p) => p.id === room.accusedId);
+  el('results-spy-name').textContent = spyPlayer ? `The spy was ${spyPlayer.name}` : 'The spy was unknown';
   el('results-spy-word').textContent = room.spyWord || '—';
   el('results-civ-word').textContent = room.civilianWord || '—';
+  el('results-accused-name').textContent = accusedPlayer ? accusedPlayer.name : '—';
 
   const outcome = el('results-outcome');
   if (room.winner === 'civilians') {
-    outcome.textContent = 'Civilians won this round (+1 each).';
+    outcome.textContent = 'Civilians win — the spy was caught! (+1 each)';
     outcome.className = 'results-outcome caught';
-    outcome.hidden = false;
   } else if (room.winner === 'spy') {
-    outcome.textContent = 'The spy won this round (+2).';
+    outcome.textContent = 'The spy escaped! (+2 to the spy)';
     outcome.className = 'results-outcome escaped';
-    outcome.hidden = false;
   } else {
-    outcome.hidden = true;
+    outcome.textContent = '';
+    outcome.className = 'results-outcome';
   }
 
-  // Host win-selection buttons — only shown before a winner is picked.
-  const hostControls = el('results-host-controls');
-  hostControls.hidden = !isHost || !!room.winner;
-  const civWonBtn = el('civilians-won-btn');
-  const spyWonBtn = el('spy-won-btn');
-  if (civWonBtn) civWonBtn.disabled = !!room.winner;
-  if (spyWonBtn) spyWonBtn.disabled = !!room.winner;
-
-  // Nav buttons always visible to host (so they can advance even without scoring).
   el('results-nav-controls').hidden = !isHost;
 
   const sb = el('scoreboard');
@@ -315,15 +364,9 @@ function renderResults(room, players, isHost) {
     li.innerHTML = `<span class="sname">${escapeHtml(p.name)}</span><span class="sscore">${p.score || 0}</span>`;
     sb.appendChild(li);
   });
+
+  resetLocalVote();
 }
-
-el('civilians-won-btn').addEventListener('click', () => {
-  socket.emit('declareWinner', { winner: 'civilians' });
-});
-
-el('spy-won-btn').addEventListener('click', () => {
-  socket.emit('declareWinner', { winner: 'spy' });
-});
 
 el('next-round-btn').addEventListener('click', () => {
   socket.emit('nextRound');

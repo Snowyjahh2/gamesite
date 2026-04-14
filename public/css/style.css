@@ -867,17 +867,35 @@ main {
 .scoreboard li.top { border-color: rgba(255, 138, 76, 0.4); }
 .scoreboard li.top .sname::before { content: '👑 '; }
 
-#results-host-controls { margin: 6px 0 14px; }
+#results-nav-controls { margin-top: 6px; }
 #results-nav-controls .btn + .btn { margin-top: 10px; }
 
-.winner-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 8px 0 6px;
+.results-accused {
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+.results-accused span {
+  color: var(--fg);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
-.winner-buttons .btn { width: 100%; }
+.tie-banner {
+  background: linear-gradient(135deg, rgba(255, 138, 76, 0.2), rgba(255, 84, 115, 0.2));
+  border: 1px solid rgba(255, 138, 76, 0.5);
+  color: var(--accent-warm);
+  padding: 10px 14px;
+  border-radius: 12px;
+  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 4px 0 14px;
+  animation: pulseFast 1.2s ease-in-out infinite;
+}
 
 /* ---------- Small screens ---------- */
 

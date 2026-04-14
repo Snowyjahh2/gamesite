@@ -44,6 +44,8 @@ function generateCode() {
   return code;
 }
 
+const VOTE_SECS = 15;
+
 function makeRoom(code, hostId, hostName, opts) {
   /** @type {Room} */
   const room = {
@@ -63,8 +65,14 @@ function makeRoom(code, hostId, hostName, opts) {
     spyWord: null,
     category: null,
     discussionEndsAt: null,
-    winner: null, // 'civilians' | 'spy' | null — set by host on the results screen
+    // Voting phase
+    votes: {},              // voterId -> targetId (server only; never broadcast)
+    votingEndsAt: null,
+    tieCount: 0,
+    accusedId: null,        // set at results — who the group convicted
+    winner: null,           // 'civilians' | 'spy' | null — auto-set by vote outcome
     discussionTimeout: null,
+    votingTimeout: null,
   };
   rooms.set(code, room);
   return room;
@@ -100,14 +108,28 @@ function publicView(room) {
     discussionEndsAt: room.discussionEndsAt,
     // Category shown to all if the host enabled it and a round is active.
     category: room.showHint && room.state !== 'lobby' ? room.category : null,
+    tieCount: room.tieCount || 0,
   };
-  // Reveal secrets only at results.
+
+  if (room.state === 'voting') {
+    v.votingEndsAt = room.votingEndsAt;
+    // Anonymous: expose only the list of voter IDs (so the UI can show
+    // ✓ next to names) and the count. Never the target of any vote.
+    v.voters = Object.keys(room.votes || {});
+  }
+
   if (room.state === 'results') {
     v.spyId = room.spyId;
     v.civilianWord = room.civilianWord;
     v.spyWord = room.spyWord;
     v.winner = room.winner;
+    v.accusedId = room.accusedId;
+    // Tally the last round's votes for display (anonymous — just counts per target).
+    const tallies = {};
+    Object.values(room.votes || {}).forEach((t) => { tallies[t] = (tallies[t] || 0) + 1; });
+    v.voteTallies = tallies;
   }
+
   return v;
 }
 
@@ -137,11 +159,13 @@ function startRound(code) {
   room.spyWord = pair.spy;
   room.spyId = spyId;
   room.discussionEndsAt = null;
+  room.votes = {};
+  room.votingEndsAt = null;
+  room.tieCount = 0;
+  room.accusedId = null;
   room.winner = null;
-  if (room.discussionTimeout) {
-    clearTimeout(room.discussionTimeout);
-    room.discussionTimeout = null;
-  }
+  if (room.discussionTimeout) { clearTimeout(room.discussionTimeout); room.discussionTimeout = null; }
+  if (room.votingTimeout)     { clearTimeout(room.votingTimeout);     room.votingTimeout = null; }
   ids.forEach((id) => { room.players[id].ready = false; });
 
   // Private word delivery — each player only gets their own assignment.
@@ -183,7 +207,7 @@ function startDiscussion(code) {
   if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
   room.discussionTimeout = setTimeout(() => {
     const r = rooms.get(code);
-    if (r && r.state === 'discussion') revealSpy(code);
+    if (r && r.state === 'discussion') startVoting(code);
   }, room.timerSecs * 1000);
 }
 
@@ -196,41 +220,95 @@ function toggleVoteRequest(code, socketId) {
 
   const all = Object.values(room.players);
   if (all.length >= 3 && all.every((p) => p.wantsVote)) {
-    revealSpy(code);
+    startVoting(code);
   }
 }
 
-function revealSpy(code) {
+function startVoting(code) {
   const room = rooms.get(code);
   if (!room) return;
-  if (room.state !== 'discussion') return;
-  if (room.discussionTimeout) {
-    clearTimeout(room.discussionTimeout);
-    room.discussionTimeout = null;
-  }
-  room.state = 'results';
-  room.winner = null; // host picks a winner on the results screen (optional)
+  if (room.state !== 'discussion' && room.state !== 'voting') return;
+  if (room.discussionTimeout) { clearTimeout(room.discussionTimeout); room.discussionTimeout = null; }
+  if (room.votingTimeout)     { clearTimeout(room.votingTimeout);     room.votingTimeout = null; }
+
+  room.state = 'voting';
+  room.votes = {};
+  room.votingEndsAt = Date.now() + VOTE_SECS * 1000;
   broadcastRoom(code);
+
+  room.votingTimeout = setTimeout(() => {
+    const r = rooms.get(code);
+    if (r && r.state === 'voting') tallyVotes(code);
+  }, VOTE_SECS * 1000);
 }
 
-function declareWinner(code, socketId, winner) {
+function castVote(code, voterId, targetId) {
   const room = rooms.get(code);
-  if (!room || room.state !== 'results') return;
-  if (room.host !== socketId) return;
-  if (winner !== 'civilians' && winner !== 'spy') return;
-  if (room.winner) return; // already scored this round
-
-  if (winner === 'civilians') {
-    Object.keys(room.players).forEach((id) => {
-      if (id !== room.spyId) {
-        room.players[id].score = (room.players[id].score || 0) + 1;
-      }
-    });
-  } else if (room.players[room.spyId]) {
-    room.players[room.spyId].score = (room.players[room.spyId].score || 0) + 2;
-  }
-  room.winner = winner;
+  if (!room || room.state !== 'voting') return;
+  if (!room.players[voterId] || !room.players[targetId]) return;
+  if (voterId === targetId) return; // can't vote for yourself
+  room.votes[voterId] = targetId;
   broadcastRoom(code);
+
+  // If every player has cast a vote, end voting immediately.
+  const ids = Object.keys(room.players);
+  if (ids.length > 0 && ids.every((id) => room.votes[id])) {
+    tallyVotes(code);
+  }
+}
+
+function tallyVotes(code) {
+  const room = rooms.get(code);
+  if (!room || room.state !== 'voting') return;
+  if (room.votingTimeout) { clearTimeout(room.votingTimeout); room.votingTimeout = null; }
+
+  const playerIds = Object.keys(room.players);
+  const n = playerIds.length;
+  const tallies = {};
+  Object.values(room.votes).forEach((t) => { tallies[t] = (tallies[t] || 0) + 1; });
+
+  let maxVotes = 0;
+  let topIds = [];
+  for (const [id, v] of Object.entries(tallies)) {
+    if (v > maxVotes) { maxVotes = v; topIds = [id]; }
+    else if (v === maxVotes) topIds.push(id);
+  }
+
+  // Strict majority: one person alone, with more than half of all players voting for them.
+  const hasStrictMajority = topIds.length === 1 && maxVotes > n / 2;
+
+  if (hasStrictMajority) {
+    const accusedId = topIds[0];
+    room.accusedId = accusedId;
+    if (accusedId === room.spyId) {
+      // Civilians caught the spy: +1 each to non-spies.
+      playerIds.forEach((id) => {
+        if (id !== room.spyId) {
+          room.players[id].score = (room.players[id].score || 0) + 1;
+        }
+      });
+      room.winner = 'civilians';
+    } else {
+      // Wrong accusation: spy wins +2.
+      if (room.players[room.spyId]) {
+        room.players[room.spyId].score = (room.players[room.spyId].score || 0) + 2;
+      }
+      room.winner = 'spy';
+    }
+    room.state = 'results';
+    broadcastRoom(code);
+  } else {
+    // No majority / tie for the top spot → revote.
+    room.tieCount = (room.tieCount || 0) + 1;
+    room.votes = {};
+    room.votingEndsAt = Date.now() + VOTE_SECS * 1000;
+    broadcastRoom(code);
+
+    room.votingTimeout = setTimeout(() => {
+      const r = rooms.get(code);
+      if (r && r.state === 'voting') tallyVotes(code);
+    }, VOTE_SECS * 1000);
+  }
 }
 
 function backToLobby(code, socketId) {
@@ -243,12 +321,14 @@ function backToLobby(code, socketId) {
   room.spyWord = null;
   room.category = null;
   room.discussionEndsAt = null;
+  room.votes = {};
+  room.votingEndsAt = null;
+  room.tieCount = 0;
+  room.accusedId = null;
   room.winner = null;
-  if (room.discussionTimeout) {
-    clearTimeout(room.discussionTimeout);
-    room.discussionTimeout = null;
-  }
-  Object.values(room.players).forEach((p) => { p.ready = false; });
+  if (room.discussionTimeout) { clearTimeout(room.discussionTimeout); room.discussionTimeout = null; }
+  if (room.votingTimeout)     { clearTimeout(room.votingTimeout);     room.votingTimeout = null; }
+  Object.values(room.players).forEach((p) => { p.ready = false; p.wantsVote = false; });
   broadcastRoom(code);
 }
 
@@ -315,7 +395,7 @@ io.on('connection', (socket) => {
     const { code, room } = found;
     if (room.host !== socket.id) return;
     if (room.state !== 'discussion') return;
-    revealSpy(code);
+    startVoting(code);
   });
 
   socket.on('requestVote', () => {
@@ -324,10 +404,10 @@ io.on('connection', (socket) => {
     toggleVoteRequest(found.code, socket.id);
   });
 
-  socket.on('declareWinner', (payload = {}) => {
+  socket.on('castVote', (payload = {}) => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
-    declareWinner(found.code, socket.id, payload.winner);
+    castVote(found.code, socket.id, String(payload.targetId || ''));
   });
 
   socket.on('nextRound', () => {
