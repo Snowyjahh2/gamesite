@@ -218,29 +218,40 @@ el('ready-btn').addEventListener('click', () => {
 // ---------- Discussion ----------
 
 function renderDiscussion(room, players, isHost) {
+  const order = (room.turnOrder && room.turnOrder.length) ? room.turnOrder : players.map((p) => p.id);
+  const turnIndex = room.turnIndex || 0;
+  const currentId = order[turnIndex];
+  const currentPlayer = currentId ? room.players[currentId] : null;
+
+  // Current speaker block
+  el('current-speaker-name').textContent = currentPlayer ? currentPlayer.name : '—';
+
+  // Speaking-order list — highlight current speaker, grey out past speakers
   const ol = el('turn-list');
   ol.innerHTML = '';
-  players.forEach((p) => {
+  order.forEach((pid, i) => {
+    const p = room.players[pid];
+    if (!p) return;
     const li = document.createElement('li');
-    li.textContent = p.name + (p.wantsVote ? '  ✓' : '');
-    if (p.wantsVote) li.classList.add('ready-to-vote');
+    li.textContent = p.name;
+    if (i < turnIndex) li.classList.add('past-speaker');
+    if (i === turnIndex) li.classList.add('current-speaker');
     ol.appendChild(li);
   });
 
-  const me = room.players[myId];
-  const myVoted = !!(me && me.wantsVote);
-  const voteBtn = el('vote-btn');
-  voteBtn.textContent = myVoted ? 'Cancel' : 'Ready to vote';
-  voteBtn.classList.toggle('voted', myVoted);
-
-  const votedCount = players.filter((p) => p.wantsVote).length;
-  el('vote-count').textContent = votedCount;
-  el('vote-total').textContent = players.length;
+  // Next button — only the current speaker can press it
+  const nextBtn = el('next-turn-btn');
+  const isMyTurn = currentId === myId;
+  nextBtn.disabled = !isMyTurn;
+  nextBtn.textContent = isMyTurn
+    ? (turnIndex === order.length - 1 ? 'Finish · go to vote →' : 'Next →')
+    : `Waiting for ${currentPlayer ? currentPlayer.name : '…'}`;
 
   el('disc-host-controls').hidden = !isHost;
+
   startTimerTick(
-    room.discussionEndsAt,
-    (room.timerSecs || 120) * 1000,
+    room.turnEndsAt,
+    (room.perTurnSecs || 20) * 1000,
     el('timer'),
     el('timer-fill')
   );
@@ -273,8 +284,8 @@ el('reveal-spy-btn').addEventListener('click', () => {
   socket.emit('endDiscussion');
 });
 
-el('vote-btn').addEventListener('click', () => {
-  socket.emit('requestVote');
+el('next-turn-btn').addEventListener('click', () => {
+  socket.emit('nextTurn');
 });
 
 // ---------- Voting ----------

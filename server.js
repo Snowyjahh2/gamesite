@@ -64,7 +64,11 @@ function makeRoom(code, hostId, hostName, opts) {
     civilianWord: null,
     spyWord: null,
     category: null,
-    discussionEndsAt: null,
+    // Turn-based discussion
+    turnOrder: [],          // shuffled array of player IDs
+    turnIndex: 0,           // index into turnOrder
+    perTurnSecs: 0,         // seconds per player (total / N)
+    turnEndsAt: null,       // timestamp when the current turn expires
     // Voting phase
     votes: {},              // voterId -> targetId (server only; never broadcast)
     votingEndsAt: null,
@@ -76,6 +80,15 @@ function makeRoom(code, hostId, hostName, opts) {
   };
   rooms.set(code, room);
   return room;
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function clamp(n, min, max) {
@@ -105,7 +118,11 @@ function publicView(room) {
     state: room.state,
     round: room.round,
     players: room.players,
-    discussionEndsAt: room.discussionEndsAt,
+    // Turn-based discussion
+    turnOrder: room.turnOrder || [],
+    turnIndex: room.turnIndex || 0,
+    perTurnSecs: room.perTurnSecs || 0,
+    turnEndsAt: room.turnEndsAt,
     // Category shown to all if the host enabled it and a round is active.
     category: room.showHint && room.state !== 'lobby' ? room.category : null,
     tieCount: room.tieCount || 0,
@@ -158,7 +175,10 @@ function startRound(code) {
   room.civilianWord = pair.civilian;
   room.spyWord = pair.spy;
   room.spyId = spyId;
-  room.discussionEndsAt = null;
+  room.turnOrder = [];
+  room.turnIndex = 0;
+  room.perTurnSecs = 0;
+  room.turnEndsAt = null;
   room.votes = {};
   room.votingEndsAt = null;
   room.tieCount = 0;
@@ -198,30 +218,59 @@ function markReady(code, socketId) {
 function startDiscussion(code) {
   const room = rooms.get(code);
   if (!room) return;
-  room.state = 'discussion';
-  room.discussionEndsAt = Date.now() + room.timerSecs * 1000;
-  // Reset per-round vote-ready flags.
-  Object.values(room.players).forEach((p) => { p.wantsVote = false; });
-  broadcastRoom(code);
 
-  if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
-  room.discussionTimeout = setTimeout(() => {
-    const r = rooms.get(code);
-    if (r && r.state === 'discussion') startVoting(code);
-  }, room.timerSecs * 1000);
+  const playerIds = Object.keys(room.players);
+  // Pick a random order — turnOrder[0] is the random starting player.
+  room.turnOrder = shuffle(playerIds);
+  room.turnIndex = 0;
+  // Divide the total discussion time across the players, with a floor so
+  // each person gets a playable slice even with many players / short timer.
+  room.perTurnSecs = Math.max(10, Math.floor(room.timerSecs / playerIds.length));
+  room.turnEndsAt = Date.now() + room.perTurnSecs * 1000;
+
+  room.state = 'discussion';
+  broadcastRoom(code);
+  scheduleTurnEnd(code);
 }
 
-function toggleVoteRequest(code, socketId) {
+function scheduleTurnEnd(code) {
+  const room = rooms.get(code);
+  if (!room) return;
+  if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
+  const delay = Math.max(0, (room.turnEndsAt || Date.now()) - Date.now());
+  room.discussionTimeout = setTimeout(() => {
+    const r = rooms.get(code);
+    if (r && r.state === 'discussion') advanceTurn(code, null);
+  }, delay);
+}
+
+function advanceTurn(code, callerId) {
   const room = rooms.get(code);
   if (!room || room.state !== 'discussion') return;
-  if (!room.players[socketId]) return;
-  room.players[socketId].wantsVote = !room.players[socketId].wantsVote;
-  broadcastRoom(code);
+  // If a player triggered this (not the timer), verify they're the current speaker.
+  if (callerId !== null && room.turnOrder[room.turnIndex] !== callerId) return;
 
-  const all = Object.values(room.players);
-  if (all.length >= 3 && all.every((p) => p.wantsVote)) {
-    startVoting(code);
+  if (room.discussionTimeout) {
+    clearTimeout(room.discussionTimeout);
+    room.discussionTimeout = null;
   }
+
+  // Advance to the next still-present player in the turn order.
+  let next = (room.turnIndex || 0) + 1;
+  while (next < room.turnOrder.length && !room.players[room.turnOrder[next]]) {
+    next++;
+  }
+
+  if (next >= room.turnOrder.length) {
+    // Everyone has had a turn → go straight to voting.
+    startVoting(code);
+    return;
+  }
+
+  room.turnIndex = next;
+  room.turnEndsAt = Date.now() + room.perTurnSecs * 1000;
+  broadcastRoom(code);
+  scheduleTurnEnd(code);
 }
 
 function startVoting(code) {
@@ -320,7 +369,10 @@ function backToLobby(code, socketId) {
   room.civilianWord = null;
   room.spyWord = null;
   room.category = null;
-  room.discussionEndsAt = null;
+  room.turnOrder = [];
+  room.turnIndex = 0;
+  room.perTurnSecs = 0;
+  room.turnEndsAt = null;
   room.votes = {};
   room.votingEndsAt = null;
   room.tieCount = 0;
@@ -328,7 +380,7 @@ function backToLobby(code, socketId) {
   room.winner = null;
   if (room.discussionTimeout) { clearTimeout(room.discussionTimeout); room.discussionTimeout = null; }
   if (room.votingTimeout)     { clearTimeout(room.votingTimeout);     room.votingTimeout = null; }
-  Object.values(room.players).forEach((p) => { p.ready = false; p.wantsVote = false; });
+  Object.values(room.players).forEach((p) => { p.ready = false; });
   broadcastRoom(code);
 }
 
@@ -398,10 +450,10 @@ io.on('connection', (socket) => {
     startVoting(code);
   });
 
-  socket.on('requestVote', () => {
+  socket.on('nextTurn', () => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
-    toggleVoteRequest(found.code, socket.id);
+    advanceTurn(found.code, socket.id);
   });
 
   socket.on('castVote', (payload = {}) => {
