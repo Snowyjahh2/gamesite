@@ -7,57 +7,43 @@
 <title>Word Spy — Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="page-room">
-  <div class="paper-grain" aria-hidden="true"></div>
-
   <main class="room">
     <header class="room-header">
-      <a href="index.html" class="leave" id="leave-btn">← Abort</a>
+      <a href="index.html" class="leave" id="leave-btn">← Leave</a>
       <div class="room-code-block">
-        <span class="room-code-label">CASE #</span>
+        <span class="room-code-label">Room code</span>
         <span class="room-code" id="room-code">----</span>
-        <button class="copy-btn" id="copy-code" title="Copy code">COPY</button>
+        <button class="copy-btn" id="copy-code" title="Copy code">Copy</button>
       </div>
-      <div class="round-badge" id="round-badge">ROUND 1</div>
+      <div class="round-badge" id="round-badge">Round 1</div>
     </header>
 
     <!-- LOBBY -->
     <section class="view" id="view-lobby">
       <div class="card card-wide">
-        <div class="card-corner card-corner-tl"></div>
-        <div class="card-corner card-corner-tr"></div>
-        <div class="card-corner card-corner-bl"></div>
-        <div class="card-corner card-corner-br"></div>
-        <div class="section-label">Assembly · Awaiting Agents</div>
-        <h2>The Briefing Room</h2>
-        <p class="muted">Share the case number. The lead agent can start the briefing once 3+ agents are in.</p>
+        <h2>Lobby</h2>
+        <p class="muted">Share the room code. The host can start when 3+ players are in.</p>
         <ul class="players" id="lobby-players"></ul>
         <div class="host-only" id="lobby-host-controls" hidden>
-          <button class="btn btn-primary" id="start-btn" disabled>Begin the briefing</button>
+          <button class="btn btn-primary" id="start-btn" disabled>Start game</button>
         </div>
-        <p class="muted small" id="lobby-wait-msg">Only the lead agent can begin.</p>
+        <p class="muted small" id="lobby-wait-msg">Waiting for the host to start…</p>
       </div>
     </section>
 
     <!-- WORD REVEAL -->
     <section class="view" id="view-reveal" hidden>
       <div class="card card-center">
-        <div class="card-corner card-corner-tl"></div>
-        <div class="card-corner card-corner-tr"></div>
-        <div class="card-corner card-corner-bl"></div>
-        <div class="card-corner card-corner-br"></div>
-        <div class="section-label">Sealed Orders</div>
-        <h2>Your Assignment</h2>
-        <p class="muted">Tap the envelope to read. Do not let anyone see.</p>
+        <h2>Your secret word</h2>
+        <p class="muted">Tap the card to reveal. Don't let anyone see!</p>
         <div class="reveal-card" id="reveal-card">
           <div class="reveal-front">
-            <div class="reveal-front-inner">
-              <div class="reveal-stamp">CLASSIFIED</div>
-              <span class="reveal-tap">Tap to open</span>
-            </div>
+            <div class="reveal-front-mark">?</div>
+            <div class="reveal-tap">Tap to reveal</div>
           </div>
           <div class="reveal-back">
             <div class="reveal-back-label">YOUR WORD</div>
@@ -65,7 +51,7 @@
             <div class="reveal-hint" id="reveal-hint"></div>
           </div>
         </div>
-        <button class="btn btn-primary" id="ready-btn">Ready to deploy</button>
+        <button class="btn btn-primary" id="ready-btn">I'm ready</button>
         <p class="muted small"><span id="ready-count">0</span> / <span id="ready-total">0</span> ready</p>
       </div>
     </section>
@@ -73,25 +59,20 @@
     <!-- DISCUSSION -->
     <section class="view" id="view-discussion" hidden>
       <div class="card card-center">
-        <div class="card-corner card-corner-tl"></div>
-        <div class="card-corner card-corner-tr"></div>
-        <div class="card-corner card-corner-bl"></div>
-        <div class="card-corner card-corner-br"></div>
-        <div class="section-label">Interrogation</div>
-        <h2>Describe Your Word</h2>
-        <p class="muted">Go around out loud. Give a vague clue. Don't give it away. Find the impostor.</p>
+        <h2>Discussion</h2>
+        <p class="muted">Take turns out loud. Give a vague clue about your word. Find the impostor!</p>
         <div class="timer" id="timer">2:00</div>
         <div class="timer-bar"><div class="timer-bar-fill" id="timer-fill"></div></div>
         <div class="turn-order">
-          <span class="turn-label">Speaking Order</span>
+          <span class="turn-label">Speaking order</span>
           <ol id="turn-list"></ol>
         </div>
         <div class="vote-row">
-          <button class="btn btn-primary" id="vote-btn">Call the vote</button>
+          <button class="btn btn-primary" id="vote-btn">Ready to vote</button>
           <p class="muted small"><span id="vote-count">0</span> / <span id="vote-total">0</span> ready</p>
         </div>
         <div class="host-only" id="disc-host-controls" hidden>
-          <button class="btn btn-secondary" id="reveal-spy-btn">Force vote (lead agent)</button>
+          <button class="btn btn-secondary" id="reveal-spy-btn">Skip to vote (host)</button>
         </div>
       </div>
     </section>
@@ -99,43 +80,33 @@
     <!-- VOTING -->
     <section class="view" id="view-voting" hidden>
       <div class="card card-wide">
-        <div class="card-corner card-corner-tl"></div>
-        <div class="card-corner card-corner-tr"></div>
-        <div class="card-corner card-corner-bl"></div>
-        <div class="card-corner card-corner-br"></div>
-        <div class="section-label">Anonymous Ballot</div>
-        <h2>Who Is The Impostor?</h2>
-        <p class="muted">Tap a suspect. Change your mind until the timer runs out. Majority decides.</p>
-        <div class="tie-banner" id="tie-banner" hidden>HUNG JURY — REVOTE</div>
+        <h2>Who's the impostor?</h2>
+        <p class="muted">Tap a player to vote. Your vote stays anonymous. Majority wins!</p>
+        <div class="tie-banner" id="tie-banner" hidden>TIE — REVOTE!</div>
         <div class="timer" id="voting-timer">0:15</div>
         <div class="timer-bar"><div class="timer-bar-fill" id="voting-timer-fill"></div></div>
         <ul class="vote-list" id="vote-list"></ul>
-        <p class="muted small"><span id="voted-count">0</span> / <span id="voted-total">0</span> have cast their ballot</p>
+        <p class="muted small"><span id="voted-count">0</span> / <span id="voted-total">0</span> voted</p>
       </div>
     </section>
 
     <!-- RESULTS -->
     <section class="view" id="view-results" hidden>
       <div class="card card-wide">
-        <div class="card-corner card-corner-tl"></div>
-        <div class="card-corner card-corner-tr"></div>
-        <div class="card-corner card-corner-bl"></div>
-        <div class="card-corner card-corner-br"></div>
-        <div class="section-label">Case File</div>
-        <h2 id="results-headline">Case Closed</h2>
+        <h2 id="results-headline">Round over!</h2>
         <div class="results-outcome" id="results-outcome">—</div>
         <div class="results-spy">
           <div class="results-accused">
-            ACCUSED &middot; <span id="results-accused-name">—</span>
+            Most votes: <span id="results-accused-name">—</span>
           </div>
           <div class="results-spy-name" id="results-spy-name">—</div>
-          <div class="results-spy-word">Spy word &middot; <span id="results-spy-word">—</span></div>
-          <div class="results-civ-word">Civilian word &middot; <span id="results-civ-word">—</span></div>
+          <div class="results-spy-word">Spy word: <span id="results-spy-word">—</span></div>
+          <div class="results-civ-word">Civilian word: <span id="results-civ-word">—</span></div>
         </div>
         <ul class="scoreboard" id="scoreboard"></ul>
         <div class="host-only" id="results-nav-controls" hidden>
-          <button class="btn btn-primary" id="next-round-btn">Next case</button>
-          <button class="btn btn-secondary" id="back-lobby-btn">Back to briefing</button>
+          <button class="btn btn-primary" id="next-round-btn">Next round</button>
+          <button class="btn btn-secondary" id="back-lobby-btn">Back to lobby</button>
         </div>
       </div>
     </section>

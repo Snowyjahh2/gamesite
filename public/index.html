@@ -7,85 +7,71 @@
 <title>Word Spy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="page-landing">
-  <div class="paper-grain" aria-hidden="true"></div>
-  <div class="page-stamp page-stamp-tl" aria-hidden="true">
-    <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="none" stroke-width="3"/><text x="50" y="45" text-anchor="middle" font-family="Anton" font-size="20">TOP</text><text x="50" y="66" text-anchor="middle" font-family="Anton" font-size="20">SECRET</text></svg>
-  </div>
-
   <main class="landing">
     <header class="brand">
-      <div class="brand-tag">File #042 · A Party Game</div>
-      <h1 class="brand-title">
-        <span class="brand-title-word">WORD</span>
-        <span class="brand-title-word brand-title-word-accent">SPY</span>
+      <h1 class="brand-title" aria-label="Word Spy">
+        <span class="letter c1">W</span><span class="letter c2">O</span><span class="letter c3">R</span><span class="letter c4">D</span>
+        <span class="letter-gap"></span>
+        <span class="letter c5">S</span><span class="letter c6">P</span><span class="letter c7">Y</span>
       </h1>
       <p class="tagline">Everyone gets a word. One of you gets a different one.<br/>Blend in, bluff, and find the impostor.</p>
-      <div class="brand-divider" aria-hidden="true">
-        <span></span><svg viewBox="0 0 24 24" width="18" height="18"><circle cx="10" cy="10" r="6" fill="none" stroke-width="2.5"/><line x1="14.5" y1="14.5" x2="21" y2="21" stroke-width="2.5" stroke-linecap="round"/></svg><span></span>
-      </div>
     </header>
 
     <section class="card">
-      <div class="card-corner card-corner-tl" aria-hidden="true"></div>
-      <div class="card-corner card-corner-tr" aria-hidden="true"></div>
-      <div class="card-corner card-corner-bl" aria-hidden="true"></div>
-      <div class="card-corner card-corner-br" aria-hidden="true"></div>
-
       <div class="tabs" role="tablist">
-        <button class="tab active" data-tab="create" role="tab" aria-selected="true">New Case</button>
-        <button class="tab" data-tab="join" role="tab" aria-selected="false">Join Case</button>
+        <button class="tab active" data-tab="create" role="tab" aria-selected="true">Create room</button>
+        <button class="tab" data-tab="join" role="tab" aria-selected="false">Join room</button>
       </div>
 
       <form class="panel active" id="create-panel" data-panel="create" autocomplete="off">
         <label class="field">
-          <span class="field-label">Agent Name</span>
-          <input type="text" id="create-name" maxlength="16" placeholder="codename" required />
+          <span class="field-label">Your name</span>
+          <input type="text" id="create-name" maxlength="16" placeholder="Enter your name" required />
         </label>
 
         <label class="field">
-          <span class="field-label">Crew Size <em id="size-label">6</em></span>
+          <span class="field-label">Players <em id="size-label">6</em></span>
           <input type="range" id="create-size" min="3" max="12" value="6" />
           <div class="range-ticks"><span>3</span><span>12</span></div>
         </label>
 
         <label class="field">
-          <span class="field-label">Interrogation Timer <em id="timer-label">2:00</em></span>
+          <span class="field-label">Discussion time <em id="timer-label">2:00</em></span>
           <input type="range" id="create-timer" min="30" max="300" step="15" value="120" />
           <div class="range-ticks"><span>0:30</span><span>5:00</span></div>
         </label>
 
         <label class="field-check">
           <input type="checkbox" id="create-hints" checked />
-          <span>Drop a category hint to the room</span>
+          <span>Show category hint to all players</span>
         </label>
 
-        <button class="btn btn-primary" type="submit">Open the case →</button>
+        <button class="btn btn-primary" type="submit">Play!</button>
       </form>
 
       <form class="panel" id="join-panel" data-panel="join" autocomplete="off">
         <label class="field">
-          <span class="field-label">Agent Name</span>
-          <input type="text" id="join-name" maxlength="16" placeholder="codename" required />
+          <span class="field-label">Your name</span>
+          <input type="text" id="join-name" maxlength="16" placeholder="Enter your name" required />
         </label>
 
         <label class="field">
-          <span class="field-label">Case Number</span>
+          <span class="field-label">Room code</span>
           <input type="text" id="join-code" maxlength="5" placeholder="XXXX" inputmode="latin" autocapitalize="characters" required />
         </label>
 
-        <button class="btn btn-primary" type="submit">Sign in →</button>
+        <button class="btn btn-primary" type="submit">Join</button>
       </form>
 
       <p class="error" id="landing-error" hidden></p>
     </section>
 
     <footer class="foot">
-      <div class="foot-rule"></div>
-      <span>3–12 AGENTS · ANY DEVICE · ONE IMPOSTOR</span>
+      <span>3–12 players · any device · one impostor</span>
     </footer>
   </main>
 
