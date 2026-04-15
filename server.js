@@ -79,6 +79,8 @@ function makeRoom(code, hostId, hostName, opts) {
     // Turn-based discussion
     turnOrder: [],
     turnIndex: 0,
+    turnLap: 1,             // current pass through turnOrder (1 or 2)
+    totalLaps: 1,            // private rooms run 2 laps, public rooms run 1
     perTurnSecs: 0,
     turnEndsAt: null,
     // Voting phase
@@ -297,6 +299,8 @@ function publicView(room) {
     // Turn-based discussion
     turnOrder: room.turnOrder || [],
     turnIndex: room.turnIndex || 0,
+    turnLap: room.turnLap || 1,
+    totalLaps: room.totalLaps || 1,
     perTurnSecs: room.perTurnSecs || 0,
     turnEndsAt: room.turnEndsAt,
     // Public lobby auto-start countdown
@@ -420,6 +424,10 @@ function startDiscussion(code) {
   // Pick a random order — turnOrder[0] is the random starting player.
   room.turnOrder = shuffle(playerIds);
   room.turnIndex = 0;
+  // Private rooms get two passes through the order; public rooms stay at one
+  // so the auto-cycle stays quick.
+  room.totalLaps = room.public ? 1 : 2;
+  room.turnLap = 1;
   // Time per player comes straight from the room setting (default 45s).
   room.perTurnSecs = room.timerSecs;
   room.turnEndsAt = Date.now() + room.perTurnSecs * 1000;
@@ -460,9 +468,25 @@ function advanceTurn(code, callerId) {
   }
 
   if (next >= room.turnOrder.length) {
-    // Everyone has had a turn → go straight to voting.
-    startVoting(code);
-    return;
+    // End of the current lap.
+    const currentLap = room.turnLap || 1;
+    const totalLaps = room.totalLaps || 1;
+    if (currentLap < totalLaps) {
+      // Start the next lap from the first still-present player.
+      room.turnLap = currentLap + 1;
+      next = 0;
+      while (next < room.turnOrder.length && !room.players[room.turnOrder[next]]) {
+        next++;
+      }
+      if (next >= room.turnOrder.length) {
+        startVoting(code);
+        return;
+      }
+    } else {
+      // All laps complete → voting.
+      startVoting(code);
+      return;
+    }
   }
 
   room.turnIndex = next;

@@ -325,11 +325,24 @@ el('ready-btn').addEventListener('click', () => {
 function renderDiscussion(room, players, isHost) {
   const order = (room.turnOrder && room.turnOrder.length) ? room.turnOrder : players.map((p) => p.id);
   const turnIndex = room.turnIndex || 0;
+  const turnLap = room.turnLap || 1;
+  const totalLaps = room.totalLaps || 1;
   const currentId = order[turnIndex];
   const currentPlayer = currentId ? room.players[currentId] : null;
 
   // Current speaker block
   el('current-speaker-name').textContent = currentPlayer ? currentPlayer.name : '—';
+
+  // Lap badge — only when there's more than one lap
+  const lapBadge = el('lap-badge');
+  if (lapBadge) {
+    if (totalLaps > 1) {
+      lapBadge.textContent = `Round ${turnLap}/${totalLaps}`;
+      lapBadge.hidden = false;
+    } else {
+      lapBadge.hidden = true;
+    }
+  }
 
   // Speaking-order list — highlight current speaker, grey out past speakers
   const ol = el('turn-list');
@@ -349,9 +362,11 @@ function renderDiscussion(room, players, isHost) {
   const me = room.players[myId];
   const isSpectator = me && me.spectator;
   const isMyTurn = currentId === myId && !isSpectator;
+  // The very last turn is only on the final lap.
+  const isFinalTurn = turnIndex === order.length - 1 && turnLap >= totalLaps;
   nextBtn.disabled = !isMyTurn;
   nextBtn.textContent = isMyTurn
-    ? (turnIndex === order.length - 1 ? 'Finish · go to vote →' : 'Next →')
+    ? (isFinalTurn ? 'Finish · go to vote →' : 'Next →')
     : (isSpectator ? 'Spectating…' : `Waiting for ${currentPlayer ? currentPlayer.name : '…'}`);
 
   el('disc-host-controls').hidden = !isHost;
