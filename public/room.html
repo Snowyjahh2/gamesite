@@ -15,12 +15,19 @@
     <header class="room-header">
       <a href="index.html" class="leave" id="leave-btn">← Leave</a>
       <div class="room-code-block">
-        <span class="room-code-label">Room code</span>
+        <span class="room-code-label" id="room-title-label">Room code</span>
         <span class="room-code" id="room-code">----</span>
         <button class="copy-btn" id="copy-code" title="Copy code">Copy</button>
       </div>
       <div class="round-badge" id="round-badge">Round 1</div>
     </header>
+
+    <div class="spectator-banner" id="spectator-banner" hidden>
+      👀 You're spectating — you'll join next round
+    </div>
+
+    <div class="room-grid">
+      <div class="room-main">
 
     <!-- LOBBY -->
     <section class="view" id="view-lobby">
@@ -60,13 +67,30 @@
     <section class="view" id="view-discussion" hidden>
       <div class="card card-center">
         <h2>Discussion</h2>
-        <p class="muted" id="disc-subtitle">Describe your word out loud. Don't give it away!</p>
+        <p class="muted" id="disc-subtitle">Describe your word. Don't give it away!</p>
         <div class="current-speaker-block">
           <span class="current-speaker-label">Now speaking</span>
           <div class="current-speaker-name" id="current-speaker-name">—</div>
         </div>
-        <div class="timer" id="timer">0:20</div>
+        <div class="timer" id="timer">0:45</div>
         <div class="timer-bar"><div class="timer-bar-fill" id="timer-fill"></div></div>
+
+        <!-- Draw-mode canvas (visible only when room.mode === 'draw') -->
+        <div class="draw-stage" id="draw-stage" hidden>
+          <canvas id="draw-canvas" width="560" height="380"></canvas>
+          <div class="draw-tools" id="draw-tools">
+            <button class="tool-btn color-btn active" data-color="#171510" style="background:#171510"></button>
+            <button class="tool-btn color-btn" data-color="#e53935" style="background:#e53935"></button>
+            <button class="tool-btn color-btn" data-color="#1e9df5" style="background:#1e9df5"></button>
+            <button class="tool-btn color-btn" data-color="#38c668" style="background:#38c668"></button>
+            <button class="tool-btn color-btn" data-color="#ffcb05" style="background:#ffcb05"></button>
+            <button class="tool-btn" id="draw-size-sm" title="Small brush"><span class="dot-sm"></span></button>
+            <button class="tool-btn" id="draw-size-lg" title="Large brush"><span class="dot-lg"></span></button>
+            <button class="tool-btn tool-clear" id="draw-clear">Clear</button>
+          </div>
+          <p class="muted small draw-hint" id="draw-hint">Only the current speaker can draw.</p>
+        </div>
+
         <div class="next-row">
           <button class="btn btn-primary" id="next-turn-btn">Next →</button>
         </div>
@@ -113,6 +137,28 @@
         </div>
       </div>
     </section>
+
+      </div><!-- /.room-main -->
+
+      <aside class="chat-panel" id="chat-panel">
+        <div class="chat-head">
+          <span class="chat-title">Chat</span>
+          <span class="chat-meta" id="chat-meta"></span>
+        </div>
+        <ul class="chat-messages" id="chat-messages"></ul>
+        <form class="chat-form" id="chat-form" autocomplete="off">
+          <input
+            type="text"
+            id="chat-input"
+            maxlength="200"
+            placeholder="Type a clue…"
+            aria-label="Chat message"
+          />
+          <button class="btn btn-primary chat-send" id="chat-send" type="submit" aria-label="Send">➤</button>
+        </form>
+        <p class="chat-warning" id="chat-warning" hidden></p>
+      </aside>
+    </div><!-- /.room-grid -->
 
     <p class="error" id="room-error" hidden></p>
   </main>

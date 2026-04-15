@@ -51,13 +51,20 @@ function makeRoom(code, hostId, hostName, opts) {
   const room = {
     code,
     host: hostId,
+    // Per-player seconds, applied as each turn's duration directly.
+    // Previously this was the total discussion time divided by player count.
+    timerSecs: clamp(opts.timerSecs, 10, 300),
     maxPlayers: clamp(opts.maxPlayers, 3, 12),
-    timerSecs: clamp(opts.timerSecs, 30, 600),
     showHint: !!opts.showHint,
+    // Public servers show up in the lobby browser.
+    public: !!opts.public,
+    mode: opts.mode === 'draw' ? 'draw' : 'text',
+    serverName: sanitizeName(opts.serverName) || `${hostName}'s room`,
     state: 'lobby',
     round: 0,
+    // Active players; spectator flag marks those waiting for the next round.
     players: {
-      [hostId]: { name: hostName, score: 0, ready: false, joinedAt: Date.now() },
+      [hostId]: { name: hostName, score: 0, ready: false, spectator: false, joinedAt: Date.now() },
     },
     // Game phase fields, initialized when a round starts:
     spyId: null,
@@ -65,9 +72,9 @@ function makeRoom(code, hostId, hostName, opts) {
     spyWord: null,
     category: null,
     // Turn-based discussion
-    turnOrder: [],          // shuffled array of player IDs
+    turnOrder: [],          // shuffled array of player IDs (excluding spectators)
     turnIndex: 0,           // index into turnOrder
-    perTurnSecs: 0,         // seconds per player (total / N)
+    perTurnSecs: 0,         // seconds per player
     turnEndsAt: null,       // timestamp when the current turn expires
     // Voting phase
     votes: {},              // voterId -> targetId (server only; never broadcast)
@@ -75,6 +82,11 @@ function makeRoom(code, hostId, hostName, opts) {
     tieCount: 0,
     accusedId: null,        // set at results — who the group convicted
     winner: null,           // 'civilians' | 'spy' | null — auto-set by vote outcome
+    // Chat + draw state
+    chat: [],               // array of { id, playerId, name, text, ts, spectator }
+    chatSeq: 0,             // message sequence counter
+    drawStrokes: [],        // array of stroke objects for current turn
+    // Timeouts
     discussionTimeout: null,
     votingTimeout: null,
   };
@@ -89,6 +101,92 @@ function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// -------------------------------------------------------------------
+// Public room lobby browser
+// -------------------------------------------------------------------
+
+const LOBBY_LIST_ROOM = 'lobby:list';
+
+function roomListSnapshot() {
+  const list = [];
+  for (const r of rooms.values()) {
+    if (!r.public) continue;
+    const active = activePlayers(r);
+    list.push({
+      code: r.code,
+      name: r.serverName || `${getHostName(r)}'s room`,
+      mode: r.mode || 'text',
+      state: r.state,
+      round: r.round || 0,
+      maxPlayers: r.maxPlayers,
+      playerCount: active.length,
+      spectatorCount: spectators(r).length,
+    });
+  }
+  // Prefer waiting rooms at the top, then in-progress with open slots, then full.
+  list.sort((a, b) => {
+    const rank = (x) => (x.state === 'lobby' ? 0 : x.playerCount < x.maxPlayers ? 1 : 2);
+    return rank(a) - rank(b) || b.playerCount - a.playerCount;
+  });
+  return list;
+}
+
+function getHostName(room) {
+  const host = room.players[room.host];
+  return host ? host.name : 'Host';
+}
+
+function activePlayers(room) {
+  return Object.entries(room.players)
+    .filter(([, p]) => !p.spectator)
+    .map(([id, p]) => ({ id, ...p }));
+}
+
+function spectators(room) {
+  return Object.entries(room.players)
+    .filter(([, p]) => p.spectator)
+    .map(([id, p]) => ({ id, ...p }));
+}
+
+function broadcastRoomList() {
+  io.to(LOBBY_LIST_ROOM).emit('roomListUpdate', roomListSnapshot());
+}
+
+// -------------------------------------------------------------------
+// Word-reveal filter for chat
+// -------------------------------------------------------------------
+
+function normalize(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Returns true if `message` would reveal `word` (including sub-words and spaced-out variants). */
+function revealsWord(message, word) {
+  if (!word) return false;
+  const norm = normalize(message);
+  if (!norm) return false;
+
+  // Full word joined (e.g. "Hot Dog" -> "hotdog")
+  const joined = normalize(word);
+  if (joined.length >= 3 && norm.includes(joined)) return true;
+
+  // Each sub-word of a multi-word target
+  const parts = String(word).split(/\s+/).filter(Boolean);
+  if (parts.length > 1) {
+    for (const p of parts) {
+      const np = normalize(p);
+      if (np.length >= 3 && norm.includes(np)) return true;
+    }
+  }
+  return false;
+}
+
+function playerAssignedWord(room, playerId) {
+  if (!room || room.state === 'lobby' || !room.spyId) return null;
+  if (playerId === room.spyId) return room.spyWord;
+  return room.civilianWord;
 }
 
 function clamp(n, min, max) {
@@ -115,6 +213,9 @@ function publicView(room) {
     maxPlayers: room.maxPlayers,
     timerSecs: room.timerSecs,
     showHint: room.showHint,
+    public: !!room.public,
+    mode: room.mode || 'text',
+    serverName: room.serverName || '',
     state: room.state,
     round: room.round,
     players: room.players,
@@ -154,6 +255,7 @@ function broadcastRoom(code) {
   const room = rooms.get(code);
   if (!room) return;
   io.to(code).emit('roomUpdate', publicView(room));
+  if (room.public) broadcastRoomList();
 }
 
 // -------------------------------------------------------------------
@@ -163,8 +265,19 @@ function broadcastRoom(code) {
 function startRound(code) {
   const room = rooms.get(code);
   if (!room) return;
-  const ids = Object.keys(room.players);
+
+  // Promote any spectators to active players at the start of a fresh round.
+  Object.values(room.players).forEach((p) => {
+    if (p.spectator) p.spectator = false;
+  });
+
+  const ids = activePlayers(room).map((p) => p.id);
   if (ids.length < 3) return;
+
+  // Reset per-round chat and draw state.
+  room.chat = [];
+  room.chatSeq = 0;
+  room.drawStrokes = [];
 
   const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
   const spyId = ids[Math.floor(Math.random() * ids.length)];
@@ -219,14 +332,16 @@ function startDiscussion(code) {
   const room = rooms.get(code);
   if (!room) return;
 
-  const playerIds = Object.keys(room.players);
+  // Active players only — spectators sit this round out.
+  const playerIds = activePlayers(room).map((p) => p.id);
   // Pick a random order — turnOrder[0] is the random starting player.
   room.turnOrder = shuffle(playerIds);
   room.turnIndex = 0;
-  // Divide the total discussion time across the players, with a floor so
-  // each person gets a playable slice even with many players / short timer.
-  room.perTurnSecs = Math.max(10, Math.floor(room.timerSecs / playerIds.length));
+  // Time per player comes straight from the room setting (default 45s).
+  room.perTurnSecs = room.timerSecs;
   room.turnEndsAt = Date.now() + room.perTurnSecs * 1000;
+  // New turn means a fresh canvas.
+  room.drawStrokes = [];
 
   room.state = 'discussion';
   broadcastRoom(code);
@@ -269,6 +384,9 @@ function advanceTurn(code, callerId) {
 
   room.turnIndex = next;
   room.turnEndsAt = Date.now() + room.perTurnSecs * 1000;
+  // Fresh canvas for the next speaker.
+  room.drawStrokes = [];
+  io.to(code).emit('drawClear');
   broadcastRoom(code);
   scheduleTurnEnd(code);
 }
@@ -294,14 +412,18 @@ function startVoting(code) {
 function castVote(code, voterId, targetId) {
   const room = rooms.get(code);
   if (!room || room.state !== 'voting') return;
-  if (!room.players[voterId] || !room.players[targetId]) return;
-  if (voterId === targetId) return; // can't vote for yourself
+  const voter = room.players[voterId];
+  const target = room.players[targetId];
+  if (!voter || !target) return;
+  if (voter.spectator) return;    // spectators can't vote
+  if (target.spectator) return;   // can't vote for a spectator
+  if (voterId === targetId) return;
   room.votes[voterId] = targetId;
   broadcastRoom(code);
 
-  // If every player has cast a vote, end voting immediately.
-  const ids = Object.keys(room.players);
-  if (ids.length > 0 && ids.every((id) => room.votes[id])) {
+  // All active players have voted → tally immediately.
+  const activeIds = activePlayers(room).map((p) => p.id);
+  if (activeIds.length > 0 && activeIds.every((id) => room.votes[id])) {
     tallyVotes(code);
   }
 }
@@ -311,7 +433,7 @@ function tallyVotes(code) {
   if (!room || room.state !== 'voting') return;
   if (room.votingTimeout) { clearTimeout(room.votingTimeout); room.votingTimeout = null; }
 
-  const playerIds = Object.keys(room.players);
+  const playerIds = activePlayers(room).map((p) => p.id);
   const n = playerIds.length;
   const tallies = {};
   Object.values(room.votes).forEach((t) => { tallies[t] = (tallies[t] || 0) + 1; });
@@ -398,10 +520,14 @@ io.on('connection', (socket) => {
       maxPlayers: payload.maxPlayers,
       timerSecs: payload.timerSecs,
       showHint: payload.showHint,
+      public: payload.public,
+      mode: payload.mode,
+      serverName: payload.serverName,
     });
     socket.join(code);
     safeAck(ack, { code, playerId: socket.id, room: publicView(room) });
     broadcastRoom(code);
+    if (room.public) broadcastRoomList();
   });
 
   socket.on('joinRoom', (payload = {}, ack) => {
@@ -412,7 +538,8 @@ io.on('connection', (socket) => {
 
     const room = rooms.get(code);
     if (!room) return safeAck(ack, { error: 'Room not found.' });
-    if (room.state !== 'lobby') return safeAck(ack, { error: 'Game already in progress.' });
+
+    // Capacity check counts both active players and waiting spectators.
     if (Object.keys(room.players).length >= room.maxPlayers) {
       return safeAck(ack, { error: 'Room is full.' });
     }
@@ -420,10 +547,111 @@ io.on('connection', (socket) => {
       return safeAck(ack, { error: 'That name is taken.' });
     }
 
-    room.players[socket.id] = { name, score: 0, ready: false, joinedAt: Date.now() };
+    // Private rooms require being in lobby state; public rooms let late
+    // joiners watch as spectators and get promoted on the next round.
+    if (room.state !== 'lobby' && !room.public) {
+      return safeAck(ack, { error: 'Game already in progress.' });
+    }
+
+    const asSpectator = room.state !== 'lobby';
+    room.players[socket.id] = {
+      name, score: 0, ready: false, spectator: asSpectator, joinedAt: Date.now(),
+    };
     socket.join(code);
-    safeAck(ack, { code, playerId: socket.id, room: publicView(room) });
+    safeAck(ack, {
+      code,
+      playerId: socket.id,
+      room: publicView(room),
+      chat: room.chat,
+      drawStrokes: room.mode === 'draw' ? room.drawStrokes : [],
+    });
     broadcastRoom(code);
+    if (room.public) broadcastRoomList();
+  });
+
+  // -------- Lobby browser --------
+
+  socket.on('subscribeRoomList', (_p, ack) => {
+    socket.join(LOBBY_LIST_ROOM);
+    safeAck(ack, roomListSnapshot());
+  });
+  socket.on('unsubscribeRoomList', () => {
+    socket.leave(LOBBY_LIST_ROOM);
+  });
+  socket.on('listPublicRooms', (_p, ack) => {
+    safeAck(ack, roomListSnapshot());
+  });
+
+  // -------- Chat --------
+
+  socket.on('chatMessage', (payload = {}, ack) => {
+    const found = findRoomForSocket(socket.id);
+    if (!found) return safeAck(ack, { error: 'Not in a room.' });
+    const { code, room } = found;
+    const me = room.players[socket.id];
+    if (!me) return safeAck(ack, { error: 'Not in a room.' });
+
+    const text = String(payload.text || '').trim().slice(0, 200);
+    if (!text) return safeAck(ack, { error: 'Empty message.' });
+
+    // Word-reveal filter — only applies during active rounds, and only to
+    // the player's own assigned word. Spectators can't leak either word
+    // (they don't know it anyway) so we don't filter them.
+    if (!me.spectator) {
+      const myWord = playerAssignedWord(room, socket.id);
+      if (myWord && revealsWord(text, myWord)) {
+        return safeAck(ack, { error: `Don't say your word or parts of it!` });
+      }
+    }
+
+    const msg = {
+      id: ++room.chatSeq,
+      playerId: socket.id,
+      name: me.name,
+      text,
+      ts: Date.now(),
+      spectator: !!me.spectator,
+    };
+    room.chat.push(msg);
+    // Cap history so long games don't balloon memory.
+    if (room.chat.length > 120) room.chat.splice(0, room.chat.length - 120);
+
+    io.to(code).emit('chatMessage', msg);
+    safeAck(ack, { ok: true });
+  });
+
+  // -------- Draw --------
+
+  socket.on('drawStroke', (stroke = {}) => {
+    const found = findRoomForSocket(socket.id);
+    if (!found) return;
+    const { code, room } = found;
+    if (room.mode !== 'draw' || room.state !== 'discussion') return;
+    // Only the current speaker can draw.
+    if (room.turnOrder[room.turnIndex] !== socket.id) return;
+
+    const clean = {
+      color: typeof stroke.color === 'string' ? stroke.color.slice(0, 8) : '#000000',
+      size: Number(stroke.size) || 4,
+      points: Array.isArray(stroke.points)
+        ? stroke.points.slice(0, 2000).map((p) => [Number(p[0]) || 0, Number(p[1]) || 0])
+        : [],
+    };
+    if (clean.points.length < 2) return;
+    room.drawStrokes.push(clean);
+    // Cap total strokes per turn.
+    if (room.drawStrokes.length > 400) room.drawStrokes.shift();
+    socket.to(code).emit('drawStroke', clean);
+  });
+
+  socket.on('drawClear', () => {
+    const found = findRoomForSocket(socket.id);
+    if (!found) return;
+    const { code, room } = found;
+    if (room.mode !== 'draw' || room.state !== 'discussion') return;
+    if (room.turnOrder[room.turnIndex] !== socket.id) return;
+    room.drawStrokes = [];
+    io.to(code).emit('drawClear');
   });
 
   socket.on('startGame', () => {
@@ -490,13 +718,16 @@ function handleLeave(socket) {
   const found = findRoomForSocket(socket.id);
   if (!found) return;
   const { code, room } = found;
+  const wasPublic = !!room.public;
   delete room.players[socket.id];
   socket.leave(code);
 
   const remaining = Object.keys(room.players);
   if (remaining.length === 0) {
     if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
+    if (room.votingTimeout) clearTimeout(room.votingTimeout);
     rooms.delete(code);
+    if (wasPublic) broadcastRoomList();
     return;
   }
   if (room.host === socket.id) {
@@ -504,6 +735,7 @@ function handleLeave(socket) {
     room.host = remaining[0];
   }
   broadcastRoom(code);
+  if (wasPublic) broadcastRoomList();
 }
 
 function sanitizeName(raw) {

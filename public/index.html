@@ -30,59 +30,116 @@
       <p class="tagline">Everyone gets a word. One of you gets a different one.<br/>Blend in, bluff, and find the impostor.</p>
     </header>
 
-    <section class="card">
-      <div class="tabs" role="tablist">
-        <button class="tab active" data-tab="create" role="tab" aria-selected="true">Create room</button>
-        <button class="tab" data-tab="join" role="tab" aria-selected="false">Join room</button>
-      </div>
+    <div class="name-bar">
+      <label class="field-label" for="your-name">Your name</label>
+      <input type="text" id="your-name" maxlength="16" placeholder="Enter your name" autocomplete="off" />
+    </div>
 
-      <form class="panel active" id="create-panel" data-panel="create" autocomplete="off">
-        <label class="field">
-          <span class="field-label">Your name</span>
-          <input type="text" id="create-name" maxlength="16" placeholder="Enter your name" required />
-        </label>
+    <div class="lobby-grid">
+      <!-- LEFT: Create / Join private -->
+      <aside class="lobby-side">
+        <section class="card">
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="create" role="tab" aria-selected="true">Create room</button>
+            <button class="tab" data-tab="join" role="tab" aria-selected="false">Join room</button>
+          </div>
 
-        <label class="field">
-          <span class="field-label">Players <em id="size-label">6</em></span>
-          <input type="range" id="create-size" min="3" max="12" value="6" />
-          <div class="range-ticks"><span>3</span><span>12</span></div>
-        </label>
+          <form class="panel active" id="create-panel" data-panel="create" autocomplete="off">
+            <label class="field">
+              <span class="field-label">Players <em id="size-label">6</em></span>
+              <input type="range" id="create-size" min="3" max="12" value="6" />
+              <div class="range-ticks"><span>3</span><span>12</span></div>
+            </label>
 
-        <label class="field">
-          <span class="field-label">Discussion time <em id="timer-label">2:00</em></span>
-          <input type="range" id="create-timer" min="30" max="300" step="15" value="120" />
-          <div class="range-ticks"><span>0:30</span><span>5:00</span></div>
-        </label>
+            <label class="field">
+              <span class="field-label">Time per player <em id="timer-label">0:45</em></span>
+              <input type="range" id="create-timer" min="15" max="120" step="5" value="45" />
+              <div class="range-ticks"><span>0:15</span><span>2:00</span></div>
+            </label>
 
-        <label class="field-check">
-          <input type="checkbox" id="create-hints" checked />
-          <span>Show category hint to all players</span>
-        </label>
+            <label class="field-check">
+              <input type="checkbox" id="create-hints" checked />
+              <span>Show category hint to all players</span>
+            </label>
 
-        <button class="btn btn-primary" type="submit">Play!</button>
-      </form>
+            <button class="btn btn-primary" type="submit">Play!</button>
+          </form>
 
-      <form class="panel" id="join-panel" data-panel="join" autocomplete="off">
-        <label class="field">
-          <span class="field-label">Your name</span>
-          <input type="text" id="join-name" maxlength="16" placeholder="Enter your name" required />
-        </label>
+          <form class="panel" id="join-panel" data-panel="join" autocomplete="off">
+            <label class="field">
+              <span class="field-label">Room code</span>
+              <input type="text" id="join-code" maxlength="5" placeholder="XXXX" inputmode="latin" autocapitalize="characters" required />
+            </label>
+            <button class="btn btn-primary" type="submit">Join</button>
+          </form>
 
-        <label class="field">
-          <span class="field-label">Room code</span>
-          <input type="text" id="join-code" maxlength="5" placeholder="XXXX" inputmode="latin" autocapitalize="characters" required />
-        </label>
+          <p class="error" id="landing-error" hidden></p>
+        </section>
+      </aside>
 
-        <button class="btn btn-primary" type="submit">Join</button>
-      </form>
-
-      <p class="error" id="landing-error" hidden></p>
-    </section>
+      <!-- RIGHT: Public servers -->
+      <section class="lobby-main">
+        <div class="card card-wide">
+          <div class="card-head">
+            <h2>Public servers</h2>
+            <span class="card-head-count" id="public-count">0</span>
+          </div>
+          <p class="muted small-lead">Jump into a live room. Rooms in progress let you spectate until the next round.</p>
+          <ul class="server-list" id="server-list">
+            <li class="server-empty">Looking for servers…</li>
+          </ul>
+          <button class="btn btn-secondary" id="create-public-btn">+ Create public server</button>
+        </div>
+      </section>
+    </div>
 
     <footer class="foot">
       <span>3–12 players · any device · one impostor</span>
     </footer>
   </main>
+
+  <!-- MODAL: Create public server -->
+  <div class="modal-backdrop" id="public-modal" hidden>
+    <div class="modal">
+      <button class="modal-close" id="pub-cancel" aria-label="Close">×</button>
+      <h3>New public server</h3>
+      <form id="public-form" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Server name</span>
+          <input type="text" id="pub-server-name" maxlength="24" placeholder="e.g. Party time" />
+        </label>
+
+        <label class="field">
+          <span class="field-label">Mode</span>
+          <div class="mode-toggle">
+            <button type="button" class="mode-btn active" data-mode="text">💬 Text</button>
+            <button type="button" class="mode-btn" data-mode="draw">✏️ Draw</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Max players <em id="pub-size-label">8</em></span>
+          <input type="range" id="pub-size" min="3" max="12" value="8" />
+          <div class="range-ticks"><span>3</span><span>12</span></div>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Time per player <em id="pub-timer-label">0:45</em></span>
+          <input type="range" id="pub-timer" min="15" max="120" step="5" value="45" />
+          <div class="range-ticks"><span>0:15</span><span>2:00</span></div>
+        </label>
+
+        <label class="field-check">
+          <input type="checkbox" id="pub-hints" checked />
+          <span>Show category hint to all players</span>
+        </label>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary">Create →</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="js/index.js"></script>

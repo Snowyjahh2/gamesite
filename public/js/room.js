@@ -50,8 +50,11 @@ socket.on('connect', () => {
     socket.emit('createRoom', {
       name: storedName,
       maxPlayers: parseInt(sessionStorage.getItem('ws:maxPlayers'), 10) || 6,
-      timerSecs: parseInt(sessionStorage.getItem('ws:timerSecs'), 10) || 120,
+      timerSecs: parseInt(sessionStorage.getItem('ws:timerSecs'), 10) || 45,
       showHint: sessionStorage.getItem('ws:showHint') === '1',
+      public: sessionStorage.getItem('ws:public') === '1',
+      mode: sessionStorage.getItem('ws:mode') || 'text',
+      serverName: sessionStorage.getItem('ws:serverName') || '',
     }, onJoined);
   } else {
     // Either intent=join or page refresh with stored code.
@@ -80,6 +83,10 @@ function onJoined(res) {
   url.searchParams.set('code', res.code);
   history.replaceState(null, '', url.toString());
   el('room-code').textContent = res.code;
+
+  // Replay chat history and current-turn draw strokes for late joiners.
+  if (Array.isArray(res.chat)) res.chat.forEach(appendChatMessage);
+  if (Array.isArray(res.drawStrokes)) res.drawStrokes.forEach(drawRemoteStroke);
   render(res.room);
 }
 
@@ -93,15 +100,53 @@ socket.on('connect_error', (e) => {
 });
 
 socket.on('roomUpdate', (room) => {
+  const prevState = currentRoom && currentRoom.state;
   currentRoom = room;
   el('room-code').textContent = room.code;
+
+  // Show the room name at the top if it's a named public server.
+  if (room.public && room.serverName) {
+    el('room-title-label').textContent = room.serverName;
+  } else {
+    el('room-title-label').textContent = 'Room code';
+  }
+
+  // Spectator banner
+  const me = room.players[myId];
+  el('spectator-banner').hidden = !(me && me.spectator);
+
+  // Chat panel: only visible for public rooms
+  el('chat-panel').hidden = !room.public;
+  updateChatMeta(room);
+
   render(room);
+
+  // Clear canvas when leaving discussion phase.
+  if (prevState === 'discussion' && room.state !== 'discussion') {
+    clearCanvas();
+  }
 });
 
 socket.on('yourWord', (info) => {
   myWord = info;
   hasFlipped = false;
   if (currentRoom && currentRoom.state === 'reveal') render(currentRoom);
+});
+
+// ---------- Chat ----------
+
+socket.on('chatMessage', (msg) => {
+  appendChatMessage(msg);
+});
+
+// ---------- Draw ----------
+
+socket.on('drawStroke', (stroke) => {
+  drawRemoteStroke(stroke);
+});
+
+socket.on('drawClear', () => {
+  clearCanvas();
 });
 
 // ---------- Rendering ----------
@@ -150,7 +195,9 @@ function render(room) {
 function renderLobby(room, players, isHost) {
   const ul = el('lobby-players');
   ul.innerHTML = '';
-  players.forEach((p) => {
+  // Only non-spectators count as "in the lobby" actively.
+  const activePlayers = players.filter((p) => !p.spectator);
+  activePlayers.forEach((p) => {
     const li = document.createElement('li');
     if (p.id === room.host) li.classList.add('host');
     li.innerHTML = `<span class="pname">${escapeHtml(p.name)}</span><span class="pscore">${p.score || 0}</span>`;
@@ -161,10 +208,10 @@ function renderLobby(room, players, isHost) {
   el('lobby-wait-msg').hidden = isHost;
 
   const startBtn = el('start-btn');
-  const canStart = players.length >= 3 && players.length <= room.maxPlayers;
+  const canStart = activePlayers.length >= 3 && activePlayers.length <= room.maxPlayers;
   startBtn.disabled = !canStart;
-  startBtn.textContent = players.length < 3
-    ? `Need ${3 - players.length} more player${3 - players.length === 1 ? '' : 's'}`
+  startBtn.textContent = activePlayers.length < 3
+    ? `Need ${3 - activePlayers.length} more player${3 - activePlayers.length === 1 ? '' : 's'}`
     : 'Start game';
 }
 
@@ -241,17 +288,34 @@ function renderDiscussion(room, players, isHost) {
 
   // Next button — only the current speaker can press it
   const nextBtn = el('next-turn-btn');
-  const isMyTurn = currentId === myId;
+  const me = room.players[myId];
+  const isSpectator = me && me.spectator;
+  const isMyTurn = currentId === myId && !isSpectator;
   nextBtn.disabled = !isMyTurn;
   nextBtn.textContent = isMyTurn
     ? (turnIndex === order.length - 1 ? 'Finish · go to vote →' : 'Next →')
-    : `Waiting for ${currentPlayer ? currentPlayer.name : '…'}`;
+    : (isSpectator ? 'Spectating…' : `Waiting for ${currentPlayer ? currentPlayer.name : '…'}`);
 
   el('disc-host-controls').hidden = !isHost;
 
+  // Draw stage
+  const drawStage = el('draw-stage');
+  if (room.mode === 'draw') {
+    drawStage.hidden = false;
+    el('draw-hint').textContent = isMyTurn
+      ? 'You\'re drawing. Others are watching.'
+      : `Only ${currentPlayer ? currentPlayer.name : 'the current speaker'} can draw.`;
+    // Toggle tool interactivity
+    document.querySelectorAll('#draw-tools .tool-btn').forEach((b) => {
+      b.disabled = !isMyTurn;
+    });
+  } else {
+    drawStage.hidden = true;
+  }
+
   startTimerTick(
     room.turnEndsAt,
-    (room.perTurnSecs || 20) * 1000,
+    (room.perTurnSecs || 45) * 1000,
     el('timer'),
     el('timer-fill')
   );
@@ -291,6 +355,8 @@ el('next-turn-btn').addEventListener('click', () => {
 // ---------- Voting ----------
 
 function renderVoting(room, players) {
+  // Spectators can watch but not vote — only render active players.
+  players = players.filter((p) => !p.spectator);
   // Tie banner.
   const banner = el('tie-banner');
   if (room.tieCount && room.tieCount > 0) {
@@ -412,6 +478,168 @@ el('copy-code').addEventListener('click', async () => {
     prompt('Room code:', code);
   }
 });
+
+// ---------- Chat ----------
+
+function updateChatMeta(room) {
+  if (!room) return;
+  const active = Object.values(room.players || {}).filter((p) => !p.spectator).length;
+  const specs = Object.values(room.players || {}).filter((p) => p.spectator).length;
+  const meta = el('chat-meta');
+  if (meta) {
+    meta.textContent = specs > 0 ? `${active} playing · ${specs} watching` : `${active} playing`;
+  }
+}
+
+function appendChatMessage(msg) {
+  const ul = el('chat-messages');
+  if (!ul) return;
+  const li = document.createElement('li');
+  li.className = 'chat-msg';
+  if (msg.spectator) li.classList.add('chat-msg-spec');
+  if (msg.playerId === myId) li.classList.add('chat-msg-self');
+  li.innerHTML = `
+    <span class="chat-author">${escapeHtml(msg.name)}${msg.spectator ? ' <span class="spec-badge">spec</span>' : ''}</span>
+    <span class="chat-text">${escapeHtml(msg.text)}</span>
+  `;
+  ul.appendChild(li);
+  ul.scrollTop = ul.scrollHeight;
+  while (ul.children.length > 120) ul.removeChild(ul.firstChild);
+}
+
+function showChatWarning(text) {
+  const w = el('chat-warning');
+  if (!w) return;
+  w.textContent = text;
+  w.hidden = false;
+  setTimeout(() => { w.hidden = true; }, 2600);
+}
+
+const chatForm = el('chat-form');
+if (chatForm) {
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = el('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    socket.emit('chatMessage', { text }, (res) => {
+      if (res && res.error) {
+        showChatWarning(res.error);
+        return;
+      }
+      input.value = '';
+    });
+  });
+}
+
+// ---------- Draw canvas ----------
+
+const canvas = el('draw-canvas');
+const ctx = canvas ? canvas.getContext('2d') : null;
+let drawing = false;
+let currentStroke = null;
+let penColor = '#171510';
+let penSize = 4;
+
+function setCanvasBg() {
+  if (!ctx) return;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function clearCanvas() {
+  if (!ctx) return;
+  setCanvasBg();
+}
+
+if (ctx) {
+  setCanvasBg();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const eventToPoint = (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((ev.clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((ev.clientY - rect.top) / rect.height) * canvas.height;
+    return [Math.round(x), Math.round(y)];
+  };
+
+  const canDraw = () => {
+    if (!currentRoom || currentRoom.mode !== 'draw' || currentRoom.state !== 'discussion') return false;
+    const order = currentRoom.turnOrder || [];
+    return order[currentRoom.turnIndex || 0] === myId;
+  };
+
+  canvas.addEventListener('pointerdown', (ev) => {
+    if (!canDraw()) return;
+    ev.preventDefault();
+    drawing = true;
+    try { canvas.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
+    currentStroke = { color: penColor, size: penSize, points: [eventToPoint(ev)] };
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (!drawing || !currentStroke) return;
+    ev.preventDefault();
+    const pt = eventToPoint(ev);
+    const prev = currentStroke.points[currentStroke.points.length - 1];
+    currentStroke.points.push(pt);
+    ctx.strokeStyle = currentStroke.color;
+    ctx.lineWidth = currentStroke.size;
+    ctx.beginPath();
+    ctx.moveTo(prev[0], prev[1]);
+    ctx.lineTo(pt[0], pt[1]);
+    ctx.stroke();
+  });
+  const endStroke = () => {
+    if (!drawing || !currentStroke) { drawing = false; currentStroke = null; return; }
+    drawing = false;
+    if (currentStroke.points.length >= 2) {
+      socket.emit('drawStroke', currentStroke);
+    }
+    currentStroke = null;
+  };
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+  canvas.addEventListener('pointerleave', endStroke);
+
+  document.querySelectorAll('.color-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      penColor = btn.dataset.color;
+      document.querySelectorAll('.color-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    });
+  });
+  const setSize = (px, activeId) => {
+    penSize = px;
+    ['draw-size-sm', 'draw-size-lg'].forEach((id) => {
+      const b = el(id);
+      if (b) b.classList.toggle('active', id === activeId);
+    });
+  };
+  if (el('draw-size-sm')) el('draw-size-sm').addEventListener('click', () => setSize(3, 'draw-size-sm'));
+  if (el('draw-size-lg')) el('draw-size-lg').addEventListener('click', () => setSize(10, 'draw-size-lg'));
+  setSize(4, null);
+
+  if (el('draw-clear')) {
+    el('draw-clear').addEventListener('click', () => {
+      if (!canDraw()) return;
+      clearCanvas();
+      socket.emit('drawClear');
+    });
+  }
+}
+
+function drawRemoteStroke(stroke) {
+  if (!ctx || !stroke || !Array.isArray(stroke.points)) return;
+  ctx.strokeStyle = stroke.color || '#000';
+  ctx.lineWidth = stroke.size || 4;
+  ctx.beginPath();
+  for (let i = 0; i < stroke.points.length; i++) {
+    const [x, y] = stroke.points[i];
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
 
 // ---------- Utilities ----------
 
