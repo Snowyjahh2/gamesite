@@ -177,14 +177,10 @@ el('start-btn').addEventListener('click', () => {
 function renderReveal(room, players) {
   const me = room.players[myId];
   if (!me) return;
-  const isSpy = myWord ? myWord.isSpy : false;
   const word = myWord ? myWord.word : '…';
   const category = myWord ? myWord.category : null;
 
   el('reveal-word').textContent = word;
-  const roleEl = el('reveal-role');
-  roleEl.textContent = isSpy ? 'You are the SPY' : 'Civilian';
-  roleEl.classList.toggle('spy', isSpy);
 
   const hintEl = el('reveal-hint');
   if (room.showHint && category) {
