@@ -1103,6 +1103,12 @@ main {
   background: var(--red);
   box-shadow: 0 5px 0 var(--red-dark);
 }
+.results-outcome.tied {
+  background: var(--yellow);
+  color: var(--ink);
+  text-shadow: none;
+  box-shadow: 0 5px 0 var(--yellow-dark);
+}
 
 .scoreboard {
   list-style: none;
@@ -1420,6 +1426,38 @@ main {
   box-shadow: 0 3px 0 var(--yellow-dark);
 }
 
+/* Public-room auto-start countdown */
+.public-countdown {
+  margin: 16px auto 6px;
+  text-align: center;
+  padding: 14px 16px;
+  background: var(--blue-soft);
+  border-radius: 14px;
+  box-shadow: 0 3px 0 #c4dbef;
+}
+.public-countdown-label {
+  font-family: var(--f-display);
+  font-weight: 800;
+  color: var(--blue-dark);
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+}
+.public-countdown-num {
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-size: clamp(3rem, 8vw, 4rem);
+  line-height: 1;
+  margin-top: 6px;
+  color: var(--blue-dark);
+  -webkit-text-stroke: 0.12em var(--white);
+  paint-order: stroke fill;
+  text-shadow: 0 5px 0 rgba(31, 47, 76, 0.14);
+}
+.public-countdown-num.low {
+  color: var(--red);
+  animation: pulseFast 0.6s ease-in-out infinite;
+}
+
 /* Chat panel */
 .chat-panel {
   background: var(--panel);
@@ -1453,6 +1491,122 @@ main {
   font-size: 0.72rem;
   color: var(--muted);
   font-weight: 700;
+}
+
+/* Side players list (inside chat panel) */
+.side-players {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 4px 10px;
+  margin-bottom: 8px;
+  border-bottom: 2px dashed var(--border);
+}
+
+.side-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 4px 4px;
+}
+.side-section-title {
+  font-family: var(--f-body);
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.side-section-count {
+  font-family: var(--f-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--blue-soft);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.side-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.side-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--blue-soft);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.side-list li.is-host .side-name::before {
+  content: '★ ';
+  color: var(--yellow-dark);
+}
+.side-list li.is-me {
+  background: #fff3cc;
+  outline: 2px solid var(--yellow);
+}
+.side-list-spec li {
+  background: #ececec;
+  color: var(--muted);
+  font-style: italic;
+}
+.side-list-spec li.is-me {
+  background: #fff3cc;
+  font-style: normal;
+  color: var(--ink);
+}
+.side-list .side-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.side-list .side-score {
+  font-family: var(--f-display);
+  font-weight: 800;
+  color: var(--blue-dark);
+  background: var(--white);
+  padding: 1px 8px;
+  border-radius: 999px;
+  min-width: 24px;
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+/* Spectate toggle button */
+.spectate-btn {
+  background: var(--white);
+  border: 2.5px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  margin-bottom: 8px;
+  box-shadow: 0 3px 0 var(--border);
+  transition: all 0.12s var(--ease);
+  width: 100%;
+}
+.spectate-btn:hover {
+  border-color: var(--blue);
+  color: var(--blue-dark);
+}
+.spectate-btn.active {
+  background: var(--yellow);
+  border-color: var(--yellow-dark);
+  color: var(--ink);
+  box-shadow: 0 3px 0 var(--yellow-dark);
 }
 
 .chat-messages {
@@ -1522,6 +1676,11 @@ main {
 .chat-form input:focus {
   border-color: var(--blue);
   box-shadow: 0 2px 0 var(--blue-soft), 0 0 0 3px rgba(30, 157, 245, 0.14);
+}
+.chat-form input:disabled {
+  background: #eef2f8;
+  color: var(--muted);
+  cursor: not-allowed;
 }
 .chat-send {
   width: auto !important;

@@ -33,8 +33,15 @@
     <section class="view" id="view-lobby">
       <div class="card card-wide">
         <h2>Lobby</h2>
-        <p class="muted">Share the room code. The host can start when 3+ players are in.</p>
+        <p class="muted" id="lobby-subtitle">Share the room code. The host can start when 3+ players are in.</p>
         <ul class="players" id="lobby-players"></ul>
+
+        <!-- Public room auto-start status -->
+        <div class="public-countdown" id="public-countdown" hidden>
+          <div class="public-countdown-label" id="public-countdown-label">Waiting for more players…</div>
+          <div class="public-countdown-num" id="public-countdown-num" hidden>10</div>
+        </div>
+
         <div class="host-only" id="lobby-host-controls" hidden>
           <button class="btn btn-primary" id="start-btn" disabled>Start game</button>
         </div>
@@ -145,6 +152,28 @@
           <span class="chat-title">Chat</span>
           <span class="chat-meta" id="chat-meta"></span>
         </div>
+
+        <div class="side-players">
+          <div class="side-section">
+            <div class="side-section-head">
+              <span class="side-section-title">Playing</span>
+              <span class="side-section-count" id="side-playing-count">0</span>
+            </div>
+            <ul class="side-list" id="side-playing"></ul>
+          </div>
+          <div class="side-section" id="side-spec-wrap" hidden>
+            <div class="side-section-head">
+              <span class="side-section-title">Watching</span>
+              <span class="side-section-count" id="side-spec-count">0</span>
+            </div>
+            <ul class="side-list side-list-spec" id="side-spec"></ul>
+          </div>
+        </div>
+
+        <button class="spectate-btn" id="spectate-btn" type="button">
+          <span id="spectate-btn-label">👁️ Watch only</span>
+        </button>
+
         <ul class="chat-messages" id="chat-messages"></ul>
         <form class="chat-form" id="chat-form" autocomplete="off">
           <input

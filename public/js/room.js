@@ -31,6 +31,7 @@ let timerInterval = null;
 let lastView = null;
 let joined = false;
 let localMyVote = null; // my currently selected voting target (UI highlight only)
+let countdownInterval = null; // separate ticker for the public-lobby countdown
 
 // ---------- UI boot ----------
 
@@ -111,13 +112,19 @@ socket.on('roomUpdate', (room) => {
     el('room-title-label').textContent = 'Room code';
   }
 
-  // Spectator banner
   const me = room.players[myId];
-  el('spectator-banner').hidden = !(me && me.spectator);
+  const isSpec = !!(me && me.spectator);
+  const prefSpec = !!(me && me.preferSpectate);
+
+  // Spectator banner — visible for actual spectators (not just preferSpectate during lobby).
+  el('spectator-banner').hidden = !isSpec;
 
   // Chat panel: only visible for public rooms
   el('chat-panel').hidden = !room.public;
   updateChatMeta(room);
+  renderSidePlayers(room);
+  renderSpectateButton(prefSpec, isSpec);
+  updateChatInputState(isSpec);
 
   render(room);
 
@@ -195,7 +202,6 @@ function render(room) {
 function renderLobby(room, players, isHost) {
   const ul = el('lobby-players');
   ul.innerHTML = '';
-  // Only non-spectators count as "in the lobby" actively.
   const activePlayers = players.filter((p) => !p.spectator);
   activePlayers.forEach((p) => {
     const li = document.createElement('li');
@@ -204,15 +210,67 @@ function renderLobby(room, players, isHost) {
     ul.appendChild(li);
   });
 
-  el('lobby-host-controls').hidden = !isHost;
-  el('lobby-wait-msg').hidden = isHost;
+  const subtitle = el('lobby-subtitle');
+  const countdownWrap = el('public-countdown');
+  const hostControls = el('lobby-host-controls');
+  const waitMsg = el('lobby-wait-msg');
 
-  const startBtn = el('start-btn');
-  const canStart = activePlayers.length >= 3 && activePlayers.length <= room.maxPlayers;
-  startBtn.disabled = !canStart;
-  startBtn.textContent = activePlayers.length < 3
-    ? `Need ${3 - activePlayers.length} more player${3 - activePlayers.length === 1 ? '' : 's'}`
-    : 'Start game';
+  if (room.public) {
+    // Public rooms never show a manual Start button or host wait message.
+    hostControls.hidden = true;
+    waitMsg.hidden = true;
+    subtitle.textContent = 'Public room — the game starts automatically when 3+ players are in.';
+
+    countdownWrap.hidden = false;
+    const label = el('public-countdown-label');
+    const numEl = el('public-countdown-num');
+    if (activePlayers.length < 3) {
+      label.textContent = `Waiting for more players… (${activePlayers.length}/3)`;
+      numEl.hidden = true;
+      stopCountdownTick();
+    } else if (room.countdownEndsAt) {
+      label.textContent = 'Game starts in';
+      numEl.hidden = false;
+      startCountdownTick(room.countdownEndsAt);
+    } else {
+      label.textContent = 'Ready…';
+      numEl.hidden = true;
+      stopCountdownTick();
+    }
+  } else {
+    // Private room — original flow.
+    countdownWrap.hidden = true;
+    stopCountdownTick();
+    subtitle.textContent = 'Share the room code. The host can start when 3+ players are in.';
+    hostControls.hidden = !isHost;
+    waitMsg.hidden = isHost;
+
+    const startBtn = el('start-btn');
+    const canStart = activePlayers.length >= 3 && activePlayers.length <= room.maxPlayers;
+    startBtn.disabled = !canStart;
+    startBtn.textContent = activePlayers.length < 3
+      ? `Need ${3 - activePlayers.length} more player${3 - activePlayers.length === 1 ? '' : 's'}`
+      : 'Start game';
+  }
+}
+
+function startCountdownTick(endsAt) {
+  stopCountdownTick();
+  const numEl = el('public-countdown-num');
+  const tick = () => {
+    const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+    numEl.textContent = String(remaining);
+    numEl.classList.toggle('low', remaining <= 3);
+    if (remaining <= 0) stopCountdownTick();
+  };
+  tick();
+  countdownInterval = setInterval(tick, 200);
+}
+function stopCountdownTick() {
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
 }
 
 el('start-btn').addEventListener('click', () => {
@@ -420,12 +478,16 @@ function renderResults(room, players, isHost) {
   } else if (room.winner === 'spy') {
     outcome.textContent = 'The impostor wins! (+2)';
     outcome.className = 'results-outcome escaped';
+  } else if (room.winner === 'tie') {
+    outcome.textContent = 'Vote tied — no winner this round';
+    outcome.className = 'results-outcome tied';
   } else {
     outcome.textContent = '';
     outcome.className = 'results-outcome';
   }
 
-  el('results-nav-controls').hidden = !isHost;
+  // Public rooms auto-cycle — hide manual nav; private rooms show host controls.
+  el('results-nav-controls').hidden = room.public || !isHost;
 
   const sb = el('scoreboard');
   sb.innerHTML = '';
@@ -515,6 +577,66 @@ function showChatWarning(text) {
   setTimeout(() => { w.hidden = true; }, 2600);
 }
 
+function renderSidePlayers(room) {
+  const playing = el('side-playing');
+  const spec = el('side-spec');
+  const specWrap = el('side-spec-wrap');
+  if (!playing || !spec || !specWrap) return;
+
+  const all = Object.entries(room.players || {})
+    .map(([id, p]) => ({ id, ...p }))
+    .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+
+  const actives = all.filter((p) => !p.spectator);
+  const specs = all.filter((p) => p.spectator);
+
+  playing.innerHTML = '';
+  actives.forEach((p) => {
+    const li = document.createElement('li');
+    if (p.id === room.host) li.classList.add('is-host');
+    if (p.id === myId) li.classList.add('is-me');
+    li.innerHTML = `
+      <span class="side-name">${escapeHtml(p.name)}</span>
+      <span class="side-score">${p.score || 0}</span>
+    `;
+    playing.appendChild(li);
+  });
+  el('side-playing-count').textContent = String(actives.length);
+
+  spec.innerHTML = '';
+  specs.forEach((p) => {
+    const li = document.createElement('li');
+    if (p.id === myId) li.classList.add('is-me');
+    li.innerHTML = `<span class="side-name">${escapeHtml(p.name)}</span>`;
+    spec.appendChild(li);
+  });
+  el('side-spec-count').textContent = String(specs.length);
+  specWrap.hidden = specs.length === 0;
+}
+
+function renderSpectateButton(preferSpectate, isSpectator) {
+  const btn = el('spectate-btn');
+  const label = el('spectate-btn-label');
+  if (!btn || !label) return;
+  btn.classList.toggle('active', !!preferSpectate);
+  if (preferSpectate) {
+    label.textContent = isSpectator
+      ? '👁️ Spectating — click to rejoin'
+      : '👁️ Watching next round — click to cancel';
+  } else {
+    label.textContent = '👁️ Watch only';
+  }
+}
+
+function updateChatInputState(isSpectator) {
+  const input = el('chat-input');
+  const send = el('chat-send');
+  if (!input || !send) return;
+  input.disabled = !!isSpectator;
+  send.disabled = !!isSpectator;
+  input.placeholder = isSpectator ? 'Spectating — chat disabled' : 'Type a clue…';
+}
+
 const chatForm = el('chat-form');
 if (chatForm) {
   chatForm.addEventListener('submit', (e) => {
@@ -529,6 +651,13 @@ if (chatForm) {
       }
       input.value = '';
     });
+  });
+}
+
+const spectateBtn = el('spectate-btn');
+if (spectateBtn) {
+  spectateBtn.addEventListener('click', () => {
+    socket.emit('toggleSpectate');
   });
 }
 

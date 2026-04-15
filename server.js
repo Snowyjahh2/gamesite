@@ -63,8 +63,13 @@ function makeRoom(code, hostId, hostName, opts) {
     state: 'lobby',
     round: 0,
     // Active players; spectator flag marks those waiting for the next round.
+    // preferSpectate is a persistent opt-in: player stays as spectator across rounds.
     players: {
-      [hostId]: { name: hostName, score: 0, ready: false, spectator: false, joinedAt: Date.now() },
+      [hostId]: {
+        name: hostName, score: 0, ready: false,
+        spectator: false, preferSpectate: false,
+        joinedAt: Date.now(),
+      },
     },
     // Game phase fields, initialized when a round starts:
     spyId: null,
@@ -72,21 +77,26 @@ function makeRoom(code, hostId, hostName, opts) {
     spyWord: null,
     category: null,
     // Turn-based discussion
-    turnOrder: [],          // shuffled array of player IDs (excluding spectators)
-    turnIndex: 0,           // index into turnOrder
-    perTurnSecs: 0,         // seconds per player
-    turnEndsAt: null,       // timestamp when the current turn expires
+    turnOrder: [],
+    turnIndex: 0,
+    perTurnSecs: 0,
+    turnEndsAt: null,
     // Voting phase
-    votes: {},              // voterId -> targetId (server only; never broadcast)
+    votes: {},
     votingEndsAt: null,
     tieCount: 0,
-    accusedId: null,        // set at results — who the group convicted
-    winner: null,           // 'civilians' | 'spy' | null — auto-set by vote outcome
+    accusedId: null,
+    winner: null,           // 'civilians' | 'spy' | 'tie' | null
+    // Public lobby auto-start countdown
+    countdownEndsAt: null,
+    countdownTimeout: null,
+    // Public post-results auto-return to lobby
+    resultsTimeout: null,
     // Chat + draw state
-    chat: [],               // array of { id, playerId, name, text, ts, spectator }
-    chatSeq: 0,             // message sequence counter
-    drawStrokes: [],        // array of stroke objects for current turn
-    // Timeouts
+    chat: [],
+    chatSeq: 0,
+    drawStrokes: [],
+    // Game-phase timeouts
     discussionTimeout: null,
     votingTimeout: null,
   };
@@ -189,6 +199,71 @@ function playerAssignedWord(room, playerId) {
   return room.civilianWord;
 }
 
+// -------------------------------------------------------------------
+// Public-room auto-start countdown
+// -------------------------------------------------------------------
+
+const PUBLIC_COUNTDOWN_SECS = 10;
+const PUBLIC_RESULTS_SECS = 8;
+
+function maybeStartPublicCountdown(code) {
+  const room = rooms.get(code);
+  if (!room || !room.public || room.state !== 'lobby') return;
+  const active = activePlayers(room).length;
+  if (active < 3) {
+    cancelPublicCountdown(code);
+    return;
+  }
+  if (room.countdownEndsAt) return; // already running
+  room.countdownEndsAt = Date.now() + PUBLIC_COUNTDOWN_SECS * 1000;
+  room.countdownTimeout = setTimeout(() => {
+    const r = rooms.get(code);
+    if (!r || r.state !== 'lobby') return;
+    r.countdownEndsAt = null;
+    r.countdownTimeout = null;
+    startRound(code);
+  }, PUBLIC_COUNTDOWN_SECS * 1000);
+  broadcastRoom(code);
+}
+
+function cancelPublicCountdown(code) {
+  const room = rooms.get(code);
+  if (!room) return;
+  if (room.countdownTimeout) {
+    clearTimeout(room.countdownTimeout);
+    room.countdownTimeout = null;
+  }
+  if (room.countdownEndsAt) {
+    room.countdownEndsAt = null;
+    broadcastRoom(code);
+  }
+}
+
+// -------------------------------------------------------------------
+// Reset round state (used by backToLobby + public auto-cycle)
+// -------------------------------------------------------------------
+
+function resetRoundState(room) {
+  room.state = 'lobby';
+  room.spyId = null;
+  room.civilianWord = null;
+  room.spyWord = null;
+  room.category = null;
+  room.turnOrder = [];
+  room.turnIndex = 0;
+  room.perTurnSecs = 0;
+  room.turnEndsAt = null;
+  room.votes = {};
+  room.votingEndsAt = null;
+  room.tieCount = 0;
+  room.accusedId = null;
+  room.winner = null;
+  if (room.discussionTimeout) { clearTimeout(room.discussionTimeout); room.discussionTimeout = null; }
+  if (room.votingTimeout)     { clearTimeout(room.votingTimeout);     room.votingTimeout = null; }
+  if (room.resultsTimeout)    { clearTimeout(room.resultsTimeout);    room.resultsTimeout = null; }
+  Object.values(room.players).forEach((p) => { p.ready = false; });
+}
+
 function clamp(n, min, max) {
   n = Number(n);
   if (!Number.isFinite(n)) return min;
@@ -224,6 +299,8 @@ function publicView(room) {
     turnIndex: room.turnIndex || 0,
     perTurnSecs: room.perTurnSecs || 0,
     turnEndsAt: room.turnEndsAt,
+    // Public lobby auto-start countdown
+    countdownEndsAt: room.countdownEndsAt,
     // Category shown to all if the host enabled it and a round is active.
     category: room.showHint && room.state !== 'lobby' ? room.category : null,
     tieCount: room.tieCount || 0,
@@ -266,9 +343,15 @@ function startRound(code) {
   const room = rooms.get(code);
   if (!room) return;
 
-  // Promote any spectators to active players at the start of a fresh round.
+  // Clear any pending public-lobby countdown or post-results auto-cycle.
+  if (room.countdownTimeout) { clearTimeout(room.countdownTimeout); room.countdownTimeout = null; }
+  room.countdownEndsAt = null;
+  if (room.resultsTimeout) { clearTimeout(room.resultsTimeout); room.resultsTimeout = null; }
+
+  // Apply each player's spectator preference: preferSpectate players become
+  // spectators, everyone else becomes active.
   Object.values(room.players).forEach((p) => {
-    if (p.spectator) p.spectator = false;
+    p.spectator = !!p.preferSpectate;
   });
 
   const ids = activePlayers(room).map((p) => p.id);
@@ -452,7 +535,6 @@ function tallyVotes(code) {
     const accusedId = topIds[0];
     room.accusedId = accusedId;
     if (accusedId === room.spyId) {
-      // Civilians caught the spy: +1 each to non-spies.
       playerIds.forEach((id) => {
         if (id !== room.spyId) {
           room.players[id].score = (room.players[id].score || 0) + 1;
@@ -460,17 +542,29 @@ function tallyVotes(code) {
       });
       room.winner = 'civilians';
     } else {
-      // Wrong accusation: spy wins +2.
       if (room.players[room.spyId]) {
         room.players[room.spyId].score = (room.players[room.spyId].score || 0) + 2;
       }
       room.winner = 'spy';
     }
     room.state = 'results';
+    scheduleAutoBackToLobby(code);
     broadcastRoom(code);
   } else {
-    // No majority / tie for the top spot → revote.
+    // No majority / tie for the top spot.
     room.tieCount = (room.tieCount || 0) + 1;
+
+    // Second consecutive tie → end the round as a draw. No points awarded.
+    if (room.tieCount >= 2) {
+      room.state = 'results';
+      room.winner = 'tie';
+      room.accusedId = null;
+      scheduleAutoBackToLobby(code);
+      broadcastRoom(code);
+      return;
+    }
+
+    // First tie → revote.
     room.votes = {};
     room.votingEndsAt = Date.now() + VOTE_SECS * 1000;
     broadcastRoom(code);
@@ -482,27 +576,26 @@ function tallyVotes(code) {
   }
 }
 
+function scheduleAutoBackToLobby(code) {
+  const room = rooms.get(code);
+  if (!room || !room.public) return; // only public rooms auto-cycle
+  if (room.resultsTimeout) clearTimeout(room.resultsTimeout);
+  room.resultsTimeout = setTimeout(() => {
+    const r = rooms.get(code);
+    if (!r || r.state !== 'results') return;
+    resetRoundState(r);
+    broadcastRoom(code);
+    maybeStartPublicCountdown(code);
+  }, PUBLIC_RESULTS_SECS * 1000);
+}
+
 function backToLobby(code, socketId) {
   const room = rooms.get(code);
   if (!room) return;
+  // Public rooms auto-cycle — only private rooms accept manual back-to-lobby.
+  if (room.public) return;
   if (room.host !== socketId) return;
-  room.state = 'lobby';
-  room.spyId = null;
-  room.civilianWord = null;
-  room.spyWord = null;
-  room.category = null;
-  room.turnOrder = [];
-  room.turnIndex = 0;
-  room.perTurnSecs = 0;
-  room.turnEndsAt = null;
-  room.votes = {};
-  room.votingEndsAt = null;
-  room.tieCount = 0;
-  room.accusedId = null;
-  room.winner = null;
-  if (room.discussionTimeout) { clearTimeout(room.discussionTimeout); room.discussionTimeout = null; }
-  if (room.votingTimeout)     { clearTimeout(room.votingTimeout);     room.votingTimeout = null; }
-  Object.values(room.players).forEach((p) => { p.ready = false; });
+  resetRoundState(room);
   broadcastRoom(code);
 }
 
@@ -555,7 +648,9 @@ io.on('connection', (socket) => {
 
     const asSpectator = room.state !== 'lobby';
     room.players[socket.id] = {
-      name, score: 0, ready: false, spectator: asSpectator, joinedAt: Date.now(),
+      name, score: 0, ready: false,
+      spectator: asSpectator, preferSpectate: false,
+      joinedAt: Date.now(),
     };
     socket.join(code);
     safeAck(ack, {
@@ -566,7 +661,10 @@ io.on('connection', (socket) => {
       drawStrokes: room.mode === 'draw' ? room.drawStrokes : [],
     });
     broadcastRoom(code);
-    if (room.public) broadcastRoomList();
+    if (room.public) {
+      broadcastRoomList();
+      maybeStartPublicCountdown(code);
+    }
   });
 
   // -------- Lobby browser --------
@@ -594,14 +692,17 @@ io.on('connection', (socket) => {
     const text = String(payload.text || '').trim().slice(0, 200);
     if (!text) return safeAck(ack, { error: 'Empty message.' });
 
+    // Spectators can't chat — it would give away too much once they know
+    // things the players don't (future word, spy identity from prior rounds).
+    if (me.spectator) {
+      return safeAck(ack, { error: 'Spectators can\'t chat during a game.' });
+    }
+
     // Word-reveal filter — only applies during active rounds, and only to
-    // the player's own assigned word. Spectators can't leak either word
-    // (they don't know it anyway) so we don't filter them.
-    if (!me.spectator) {
-      const myWord = playerAssignedWord(room, socket.id);
-      if (myWord && revealsWord(text, myWord)) {
-        return safeAck(ack, { error: `Don't say your word or parts of it!` });
-      }
+    // the player's own assigned word.
+    const myWord = playerAssignedWord(room, socket.id);
+    if (myWord && revealsWord(text, myWord)) {
+      return safeAck(ack, { error: `Don't say your word or parts of it!` });
     }
 
     const msg = {
@@ -658,9 +759,31 @@ io.on('connection', (socket) => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
     const { code, room } = found;
+    // Public rooms are auto-started by the lobby countdown; ignore manual start.
+    if (room.public) return;
     if (room.host !== socket.id) return;
     if (room.state !== 'lobby') return;
     startRound(code);
+  });
+
+  socket.on('toggleSpectate', () => {
+    const found = findRoomForSocket(socket.id);
+    if (!found) return;
+    const { code, room } = found;
+    const me = room.players[socket.id];
+    if (!me) return;
+    me.preferSpectate = !me.preferSpectate;
+    // In lobby the toggle is immediate; mid-game it takes effect next round.
+    if (room.state === 'lobby') {
+      me.spectator = me.preferSpectate;
+      broadcastRoom(code);
+      if (room.public) {
+        if (activePlayers(room).length < 3) cancelPublicCountdown(code);
+        else maybeStartPublicCountdown(code);
+      }
+    } else {
+      broadcastRoom(code);
+    }
   });
 
   socket.on('revealReady', () => {
@@ -694,6 +817,7 @@ io.on('connection', (socket) => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
     const { code, room } = found;
+    if (room.public) return; // public rooms auto-cycle
     if (room.host !== socket.id) return;
     if (room.state !== 'results') return;
     startRound(code);
@@ -726,6 +850,8 @@ function handleLeave(socket) {
   if (remaining.length === 0) {
     if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
     if (room.votingTimeout) clearTimeout(room.votingTimeout);
+    if (room.countdownTimeout) clearTimeout(room.countdownTimeout);
+    if (room.resultsTimeout) clearTimeout(room.resultsTimeout);
     rooms.delete(code);
     if (wasPublic) broadcastRoomList();
     return;
@@ -735,7 +861,14 @@ function handleLeave(socket) {
     room.host = remaining[0];
   }
   broadcastRoom(code);
-  if (wasPublic) broadcastRoomList();
+  if (wasPublic) {
+    broadcastRoomList();
+    // Player count changed — maybe start or cancel the lobby countdown.
+    if (room.state === 'lobby') {
+      if (activePlayers(room).length < 3) cancelPublicCountdown(code);
+      else maybeStartPublicCountdown(code);
+    }
+  }
 }
 
 function sanitizeName(raw) {
