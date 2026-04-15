@@ -138,21 +138,22 @@ main {
 
 .brand-title .letter {
   display: inline-block;
-  color: var(--blue);
-  -webkit-text-stroke: 5px var(--white);
+  color: var(--white);
+  -webkit-text-stroke: 8px var(--ink);
   paint-order: stroke fill;
-  text-shadow: 0 6px 0 rgba(31, 47, 76, 0.22);
+  text-shadow: 0 8px 0 rgba(15, 23, 42, 0.28);
   transform: translateY(0);
   transition: transform 0.3s var(--ease);
 }
 
-.brand-title .letter.c1 { color: var(--red); transform: rotate(-4deg); }
-.brand-title .letter.c2 { color: var(--orange); transform: rotate(2deg); }
-.brand-title .letter.c3 { color: var(--yellow); transform: rotate(-2deg); }
-.brand-title .letter.c4 { color: var(--green); transform: rotate(3deg); }
-.brand-title .letter.c5 { color: var(--blue); transform: rotate(-3deg); }
-.brand-title .letter.c6 { color: var(--purple); transform: rotate(2deg); }
-.brand-title .letter.c7 { color: var(--pink); transform: rotate(-4deg); }
+/* Wonky rotation per letter for the hand-drawn feel */
+.brand-title .letter.c1 { transform: rotate(-4deg); }
+.brand-title .letter.c2 { transform: rotate(2deg); }
+.brand-title .letter.c3 { transform: rotate(-2deg); }
+.brand-title .letter.c4 { transform: rotate(3deg); }
+.brand-title .letter.c5 { transform: rotate(-3deg); }
+.brand-title .letter.c6 { transform: rotate(2deg); }
+.brand-title .letter.c7 { transform: rotate(-4deg); }
 
 .brand-title .letter:hover {
   transform: translateY(-6px) rotate(0deg);
@@ -1053,7 +1054,7 @@ main {
   .card { padding: 22px 18px; border-radius: 20px; }
   .brand { padding-top: 14px; }
   .brand-title { font-size: clamp(3.8rem, 18vw, 5.5rem); gap: 2px; }
-  .brand-title .letter { -webkit-text-stroke-width: 4px; }
+  .brand-title .letter { -webkit-text-stroke-width: 6px; }
   .players { grid-template-columns: 1fr 1fr; }
   .room-header {
     grid-template-columns: auto 1fr auto;
