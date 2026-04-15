@@ -164,8 +164,8 @@ function renderLobby(room, players, isHost) {
   const canStart = players.length >= 3 && players.length <= room.maxPlayers;
   startBtn.disabled = !canStart;
   startBtn.textContent = players.length < 3
-    ? `Need ${3 - players.length} more player${3 - players.length === 1 ? '' : 's'}`
-    : 'Start game';
+    ? `Need ${3 - players.length} more agent${3 - players.length === 1 ? '' : 's'}`
+    : 'Begin the briefing';
 }
 
 el('start-btn').addEventListener('click', () => {
@@ -196,7 +196,7 @@ function renderReveal(room, players) {
 
   const readyBtn = el('ready-btn');
   readyBtn.disabled = !myWord || me.ready || !hasFlipped;
-  readyBtn.textContent = me.ready ? 'Waiting for others…' : "I'm ready";
+  readyBtn.textContent = me.ready ? 'Standing by…' : 'Ready to deploy';
 
   const readyCount = players.filter((p) => p.ready).length;
   el('ready-count').textContent = readyCount;
@@ -230,7 +230,7 @@ function renderDiscussion(room, players, isHost) {
   const me = room.players[myId];
   const myVoted = !!(me && me.wantsVote);
   const voteBtn = el('vote-btn');
-  voteBtn.textContent = myVoted ? 'Cancel vote' : 'Vote';
+  voteBtn.textContent = myVoted ? 'Stand down' : 'Call the vote';
   voteBtn.classList.toggle('voted', myVoted);
 
   const votedCount = players.filter((p) => p.wantsVote).length;
@@ -283,7 +283,7 @@ function renderVoting(room, players) {
   // Tie banner.
   const banner = el('tie-banner');
   if (room.tieCount && room.tieCount > 0) {
-    banner.textContent = `Tie — revote! (try ${room.tieCount + 1})`;
+    banner.textContent = `HUNG JURY · REVOTE #${room.tieCount + 1}`;
     banner.hidden = false;
   } else {
     banner.hidden = true;
@@ -338,10 +338,10 @@ function renderResults(room, players, isHost) {
 
   const outcome = el('results-outcome');
   if (room.winner === 'civilians') {
-    outcome.textContent = 'Civilians win — the spy was caught! (+1 each)';
+    outcome.textContent = 'Agents win — impostor caught (+1 each)';
     outcome.className = 'results-outcome caught';
   } else if (room.winner === 'spy') {
-    outcome.textContent = 'The spy escaped! (+2 to the spy)';
+    outcome.textContent = 'The impostor walks free (+2 spy)';
     outcome.className = 'results-outcome escaped';
   } else {
     outcome.textContent = '';
@@ -391,14 +391,14 @@ el('copy-code').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(code);
     const btn = el('copy-code');
-    btn.textContent = 'Copied!';
+    btn.textContent = 'COPIED';
     btn.classList.add('copied');
     setTimeout(() => {
-      btn.textContent = 'Copy';
+      btn.textContent = 'COPY';
       btn.classList.remove('copied');
     }, 1400);
   } catch {
-    prompt('Room code:', code);
+    prompt('Case #:', code);
   }
 });
 
