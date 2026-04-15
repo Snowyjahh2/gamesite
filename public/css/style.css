@@ -82,6 +82,9 @@ body {
   min-height: 100dvh;
   overflow-x: hidden;
   background:
+    radial-gradient(circle 600px at 85% 15%, rgba(255, 203, 5, 0.20), transparent 65%),
+    radial-gradient(circle 520px at 10% 80%, rgba(139, 92, 246, 0.16), transparent 65%),
+    radial-gradient(circle 440px at 95% 90%, rgba(255, 92, 154, 0.14), transparent 60%),
     radial-gradient(ellipse 80% 60% at 50% 0%, var(--bg-mid), transparent 70%),
     linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 50%, var(--bg-bot) 100%);
   background-attachment: fixed;
@@ -118,8 +121,62 @@ main {
 /* ---------- Brand / landing header ---------- */
 
 .brand {
+  position: relative;
   text-align: center;
   padding-top: 28px;
+}
+
+.brand-title-wrap {
+  position: relative;
+  display: inline-block;
+  padding: 0 40px;
+}
+
+/* Floating decorative shapes around the logo */
+.brand-deco {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.deco {
+  position: absolute;
+  font-family: var(--f-display);
+  font-weight: 800;
+  line-height: 1;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 rgba(15, 23, 42, 0.22);
+  user-select: none;
+}
+
+.deco-1 { top: -10%; left: -4%;  font-size: 2.4rem; color: var(--pink);   animation: bob1 4.2s ease-in-out infinite; }
+.deco-2 { top: -16%; right: -2%; font-size: 2.8rem; color: var(--green);  animation: bob2 5s   ease-in-out infinite; }
+.deco-3 { top: 70%;  left: -6%;  font-size: 2rem;   color: var(--purple); animation: bob3 4.6s ease-in-out infinite; }
+.deco-4 { top: 58%;  right: -6%; font-size: 2.6rem; color: var(--orange); animation: bob4 5.4s ease-in-out infinite; }
+.deco-5 { top: 28%;  right: 2%;  font-size: 1.6rem; color: var(--yellow); animation: bob5 4s   ease-in-out infinite; }
+
+@keyframes bob1 {
+  0%, 100% { transform: translateY(0)    rotate(-18deg); }
+  50%      { transform: translateY(-9px) rotate(-14deg); }
+}
+@keyframes bob2 {
+  0%, 100% { transform: translateY(0)     rotate(14deg); }
+  50%      { transform: translateY(-11px) rotate(18deg); }
+}
+@keyframes bob3 {
+  0%, 100% { transform: translateY(0)    rotate(-10deg); }
+  50%      { transform: translateY(-8px) rotate(-6deg); }
+}
+@keyframes bob4 {
+  0%, 100% { transform: translateY(0)     rotate(22deg); }
+  50%      { transform: translateY(-10px) rotate(18deg); }
+}
+@keyframes bob5 {
+  0%, 100% { transform: translateY(0)    rotate(0deg); }
+  50%      { transform: translateY(-12px) rotate(20deg); }
 }
 
 .brand-title {
@@ -144,6 +201,15 @@ main {
   text-shadow: 0 8px 0 rgba(15, 23, 42, 0.28);
   transform: translateY(0);
   transition: transform 0.3s var(--ease);
+  position: relative;
+  z-index: 2;
+}
+
+/* "WORD" stays white, "SPY" gets the accent color */
+.brand-title .letter.c5,
+.brand-title .letter.c6,
+.brand-title .letter.c7 {
+  color: var(--yellow);
 }
 
 /* Wonky rotation per letter for the hand-drawn feel */
