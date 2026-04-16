@@ -118,6 +118,36 @@ function shuffle(arr) {
   return a;
 }
 
+/** Pick a word pair that hasn't been used in this room yet.
+ *  Resets the history once every pair has been seen. */
+function pickFreshPair(room) {
+  if (!room.usedPairs) room.usedPairs = new Set();
+  if (room.usedPairs.size >= WORD_PAIRS.length) room.usedPairs.clear();
+
+  let idx;
+  do {
+    idx = Math.floor(Math.random() * WORD_PAIRS.length);
+  } while (room.usedPairs.has(idx));
+
+  room.usedPairs.add(idx);
+  return WORD_PAIRS[idx];
+}
+
+/** Pick a spy who hasn't been spy recently. Everyone gets a turn
+ *  before anyone repeats. */
+function pickFreshSpy(room, ids) {
+  if (!room.recentSpies) room.recentSpies = [];
+  // Remove players who left.
+  room.recentSpies = room.recentSpies.filter((id) => ids.includes(id));
+  // If everyone has been spy, reset.
+  if (room.recentSpies.length >= ids.length) room.recentSpies = [];
+
+  const eligible = ids.filter((id) => !room.recentSpies.includes(id));
+  const picked = eligible[Math.floor(Math.random() * eligible.length)];
+  room.recentSpies.push(picked);
+  return picked;
+}
+
 // -------------------------------------------------------------------
 // Public room lobby browser
 // -------------------------------------------------------------------
@@ -369,8 +399,8 @@ function startRound(code) {
   room.chatSeq = 0;
   room.drawStrokes = [];
 
-  const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
-  const spyId = ids[Math.floor(Math.random() * ids.length)];
+  const pair = pickFreshPair(room);
+  const spyId = pickFreshSpy(room, ids);
 
   room.state = 'reveal';
   room.round = (room.round || 0) + 1;
