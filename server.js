@@ -24,6 +24,11 @@ app.get('/room', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'roo
 // Health check.
 app.get('/healthz', (_req, res) => res.send('ok'));
 
+// AI player config — set OPENAI_API_KEY and AI_PASSWORD in Railway env vars.
+const AI_PASSWORD = process.env.AI_PASSWORD || 'snowy_pass';
+const AI_NAMES = ['Nova', 'Echo', 'Cipher', 'Nexus', 'Spark', 'Axiom'];
+const MAX_AI_PER_ROOM = 3;
+
 // -------------------------------------------------------------------
 // In-memory state
 // -------------------------------------------------------------------
@@ -278,6 +283,142 @@ function cancelPublicCountdown(code) {
 // Reset round state (used by backToLobby + public auto-cycle)
 // -------------------------------------------------------------------
 
+// -------------------------------------------------------------------
+// AI player logic
+// -------------------------------------------------------------------
+
+function generateAIId() {
+  return 'ai_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+async function generateAIClue(word, chatHistory, category) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return "Hmm, this is a tricky one to describe.";
+
+  const system = [
+    'You are playing Word Spy, a social deduction game.',
+    'Everyone has a word. One player (the spy) has a slightly different word.',
+    'Players take turns giving ONE short, vague clue about their word.',
+    'You must blend in — be vague enough that the spy can\'t figure out the real word,',
+    'but specific enough that other players recognize you\'re talking about the same thing.',
+    'Give exactly ONE casual sentence. Do NOT say the word itself or obvious synonyms.',
+    'Sound like a real person, not an AI. Be brief and natural.',
+  ].join(' ');
+
+  const user = [
+    `Your word is: "${word}".`,
+    category ? `Category hint: ${category}.` : '',
+    chatHistory ? `\nOther players said:\n${chatHistory}\n` : '',
+    'Your clue (one short sentence):',
+  ].filter(Boolean).join(' ');
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        max_tokens: 50,
+        temperature: 0.95,
+      }),
+    });
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+    return text || "It's something most people would recognize.";
+  } catch (e) {
+    console.error('AI clue error:', e.message);
+    return "I think we all know what kind of thing this is.";
+  }
+}
+
+async function handleAITurn(code) {
+  const room = rooms.get(code);
+  if (!room || room.state !== 'discussion') return;
+  const currentId = room.turnOrder[room.turnIndex];
+  const aiPlayer = room.players[currentId];
+  if (!aiPlayer || !aiPlayer.isAI) return;
+
+  const word = currentId === room.spyId ? room.spyWord : room.civilianWord;
+  const recent = room.chat.slice(-12).map((m) => `${m.name}: ${m.text}`).join('\n');
+  const clue = await generateAIClue(word, recent, room.showHint ? room.category : null);
+
+  // Post as a chat message.
+  const msg = {
+    id: ++room.chatSeq,
+    playerId: currentId,
+    name: aiPlayer.name,
+    text: clue,
+    ts: Date.now(),
+    spectator: false,
+  };
+  room.chat.push(msg);
+  if (room.chat.length > 120) room.chat.splice(0, room.chat.length - 120);
+  io.to(code).emit('chatMessage', msg);
+
+  // Wait a beat then advance.
+  setTimeout(() => {
+    const r = rooms.get(code);
+    if (r && r.state === 'discussion' && r.turnOrder[r.turnIndex] === currentId) {
+      advanceTurn(code, currentId);
+    }
+  }, 1800);
+}
+
+function handleAIReady(code) {
+  const room = rooms.get(code);
+  if (!room || room.state !== 'reveal') return;
+  // Mark all AI players as ready after a short delay.
+  setTimeout(() => {
+    const r = rooms.get(code);
+    if (!r || r.state !== 'reveal') return;
+    let changed = false;
+    activePlayers(r).forEach((p) => {
+      if (p.isAI && !r.players[p.id].ready) {
+        r.players[p.id].ready = true;
+        changed = true;
+      }
+    });
+    if (changed) {
+      broadcastRoom(code);
+      const all = activePlayers(r);
+      if (all.length >= 3 && all.every((p) => r.players[p.id].ready)) {
+        startDiscussion(code);
+      }
+    }
+  }, 2000);
+}
+
+function handleAIVotes(code) {
+  const room = rooms.get(code);
+  if (!room || room.state !== 'voting') return;
+  setTimeout(() => {
+    const r = rooms.get(code);
+    if (!r || r.state !== 'voting') return;
+    const active = activePlayers(r);
+    let changed = false;
+    active.forEach((p) => {
+      if (!p.isAI || r.votes[p.id]) return;
+      // Vote for a random non-self, non-AI player.
+      const targets = active.filter((t) => t.id !== p.id && !t.isAI);
+      if (targets.length === 0) return;
+      r.votes[p.id] = targets[Math.floor(Math.random() * targets.length)].id;
+      changed = true;
+    });
+    if (changed) {
+      broadcastRoom(code);
+      const allVoted = active.every((p) => r.votes[p.id]);
+      if (allVoted) tallyVotes(code);
+    }
+  }, 2500);
+}
+
 function resetRoundState(room) {
   room.state = 'lobby';
   room.spyId = null;
@@ -422,17 +563,26 @@ function startRound(code) {
   ids.forEach((id) => { room.players[id].ready = false; });
 
   // Private word delivery — each player only gets their own assignment.
+  // (AI players have no socket; they store their word internally.)
   ids.forEach((id) => {
     const isSpy = id === spyId;
-    io.to(id).emit('yourWord', {
-      word: isSpy ? pair.spy : pair.civilian,
-      isSpy,
-      category: pair.category,
-      showHint: room.showHint,
-    });
+    const p = room.players[id];
+    if (p && p.isAI) {
+      p.aiWord = isSpy ? pair.spy : pair.civilian;
+    } else {
+      io.to(id).emit('yourWord', {
+        word: isSpy ? pair.spy : pair.civilian,
+        isSpy,
+        category: pair.category,
+        showHint: room.showHint,
+      });
+    }
   });
 
   broadcastRoom(code);
+
+  // AI players auto-ready after a moment.
+  handleAIReady(code);
 }
 
 function markReady(code, socketId) {
@@ -470,6 +620,12 @@ function startDiscussion(code) {
   room.state = 'discussion';
   broadcastRoom(code);
   scheduleTurnEnd(code);
+
+  // If the first speaker is an AI, trigger their turn.
+  const firstId = room.turnOrder[0];
+  if (firstId && room.players[firstId] && room.players[firstId].isAI) {
+    handleAITurn(code);
+  }
 }
 
 function scheduleTurnEnd(code) {
@@ -529,6 +685,12 @@ function advanceTurn(code, callerId) {
   io.to(code).emit('drawClear');
   broadcastRoom(code);
   scheduleTurnEnd(code);
+
+  // If the new speaker is an AI, trigger their turn.
+  const nextPlayer = room.players[room.turnOrder[next]];
+  if (nextPlayer && nextPlayer.isAI) {
+    handleAITurn(code);
+  }
 }
 
 function startVoting(code) {
@@ -542,6 +704,9 @@ function startVoting(code) {
   room.votes = {};
   room.votingEndsAt = Date.now() + VOTE_SECS * 1000;
   broadcastRoom(code);
+
+  // AI players auto-vote after a moment.
+  handleAIVotes(code);
 
   room.votingTimeout = setTimeout(() => {
     const r = rooms.get(code);
@@ -823,6 +988,46 @@ io.on('connection', (socket) => {
     startRound(code);
   });
 
+  // -------- AI players (private rooms only) --------
+
+  socket.on('addAI', (payload = {}, ack) => {
+    const found = findRoomForSocket(socket.id);
+    if (!found) return safeAck(ack, { error: 'Not in a room.' });
+    const { code, room } = found;
+
+    // Password gate — 100% server-side, no bypass.
+    if (String(payload.password || '') !== AI_PASSWORD) {
+      return safeAck(ack, { error: 'Wrong password.' });
+    }
+    if (room.public) return safeAck(ack, { error: 'AI is only available in private rooms.' });
+    if (room.state !== 'lobby') return safeAck(ack, { error: 'Can only add AI in the lobby.' });
+
+    const aiCount = Object.values(room.players).filter((p) => p.isAI).length;
+    if (aiCount >= MAX_AI_PER_ROOM) {
+      return safeAck(ack, { error: `Max ${MAX_AI_PER_ROOM} AI players per room.` });
+    }
+    if (Object.keys(room.players).length >= room.maxPlayers) {
+      return safeAck(ack, { error: 'Room is full.' });
+    }
+
+    const aiId = generateAIId();
+    const usedNames = Object.values(room.players).map((p) => p.name);
+    const aiName = AI_NAMES.find((n) => !usedNames.includes(n)) || `Bot ${aiCount + 1}`;
+
+    room.players[aiId] = {
+      name: '🤖 ' + aiName,
+      score: 0,
+      ready: false,
+      spectator: false,
+      preferSpectate: false,
+      isAI: true,
+      joinedAt: Date.now(),
+    };
+
+    safeAck(ack, { ok: true, aiName });
+    broadcastRoom(code);
+  });
+
   socket.on('toggleSpectate', () => {
     const found = findRoomForSocket(socket.id);
     if (!found) return;
@@ -904,7 +1109,8 @@ function handleLeave(socket) {
   socket.leave(code);
 
   const remaining = Object.keys(room.players);
-  if (remaining.length === 0) {
+  const realRemaining = remaining.filter((id) => !room.players[id].isAI);
+  if (remaining.length === 0 || realRemaining.length === 0) {
     if (room.discussionTimeout) clearTimeout(room.discussionTimeout);
     if (room.votingTimeout) clearTimeout(room.votingTimeout);
     if (room.countdownTimeout) clearTimeout(room.countdownTimeout);

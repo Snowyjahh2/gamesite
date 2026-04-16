@@ -714,6 +714,7 @@ main {
 [hidden] { display: none !important; }
 
 #lobby-host-controls { text-align: center; }
+#add-ai-row { margin-top: 12px; text-align: center; }
 #lobby-wait-msg { text-align: center; margin-top: 14px; }
 
 /* ---------- Reveal card (flip card) ---------- */

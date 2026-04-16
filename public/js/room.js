@@ -215,6 +215,9 @@ function renderLobby(room, players, isHost) {
   const hostControls = el('lobby-host-controls');
   const waitMsg = el('lobby-wait-msg');
 
+  // "Add AI" button — private rooms only, while in lobby.
+  el('add-ai-row').hidden = !!room.public;
+
   if (room.public) {
     // Public rooms never show a manual Start button or host wait message.
     hostControls.hidden = true;
@@ -275,6 +278,16 @@ function stopCountdownTick() {
 
 el('start-btn').addEventListener('click', () => {
   socket.emit('startGame');
+});
+
+el('add-ai-btn').addEventListener('click', () => {
+  const pw = prompt('Enter the AI password:');
+  if (!pw) return;
+  socket.emit('addAI', { password: pw }, (res) => {
+    if (res && res.error) {
+      alert(res.error);
+    }
+  });
 });
 
 // ---------- Reveal ----------
