@@ -291,27 +291,9 @@ function generateAIId() {
   return 'ai_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-async function generateAIClue(word, chatHistory, category) {
+async function callOpenAI(systemPrompt, userPrompt, maxTokens = 60) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return "Hmm, this is a tricky one to describe.";
-
-  const system = [
-    'You are playing Word Spy, a social deduction game.',
-    'Everyone has a word. One player (the spy) has a slightly different word.',
-    'Players take turns giving ONE short, vague clue about their word.',
-    'You must blend in — be vague enough that the spy can\'t figure out the real word,',
-    'but specific enough that other players recognize you\'re talking about the same thing.',
-    'Give exactly ONE casual sentence. Do NOT say the word itself or obvious synonyms.',
-    'Sound like a real person, not an AI. Be brief and natural.',
-  ].join(' ');
-
-  const user = [
-    `Your word is: "${word}".`,
-    category ? `Category hint: ${category}.` : '',
-    chatHistory ? `\nOther players said:\n${chatHistory}\n` : '',
-    'Your clue (one short sentence):',
-  ].filter(Boolean).join(' ');
-
+  if (!apiKey) return null;
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -322,20 +304,67 @@ async function generateAIClue(word, chatHistory, category) {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
         ],
-        max_tokens: 50,
-        temperature: 0.95,
+        max_tokens: maxTokens,
+        temperature: 0.9,
       }),
     });
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim();
-    return text || "It's something most people would recognize.";
+    return data.choices?.[0]?.message?.content?.trim() || null;
   } catch (e) {
-    console.error('AI clue error:', e.message);
-    return "I think we all know what kind of thing this is.";
+    console.error('OpenAI error:', e.message);
+    return null;
   }
+}
+
+async function generateAIClue(word, chatHistory, category, isFirstSpeaker) {
+  const system = [
+    'You are a human player in Word Spy, a social deduction party game.',
+    'HOW THE GAME WORKS:',
+    '- Every player receives a secret word. Most players get the SAME word (civilians).',
+    '- One player (the spy) gets a SIMILAR but DIFFERENT word.',
+    '- Nobody knows if they are the spy or a civilian.',
+    '- Players take turns giving ONE short vague clue about their word.',
+    '- After all clues, players vote on who they think the spy is.',
+    '',
+    'YOUR STRATEGY:',
+    '- Read what other players have said. Their clues hint at what the common word might be.',
+    '- Give a clue that is BROAD enough to fit your word, but also sounds like it fits what others are describing.',
+    '- If others\' clues seem to match your word well, give a clue that agrees with the theme.',
+    '- If others\' clues feel slightly off from your word, you might be the spy — give something vague that could fit both interpretations.',
+    '- NEVER say your word directly, or any obvious synonym or substring of it.',
+    '- Sound casual and human. One short sentence. No quotes, no "my clue is", just the clue itself.',
+    '- Don\'t repeat what others already said. Add something new.',
+  ].join('\n');
+
+  let user;
+  if (!chatHistory || isFirstSpeaker) {
+    user = [
+      `Your word is: "${word}".`,
+      category ? `Category: ${category}.` : '',
+      '',
+      'You are the FIRST to speak. Give one short, vague clue about your word.',
+      'Be broad — don\'t give away too much since you go first.',
+    ].filter(Boolean).join('\n');
+  } else {
+    user = [
+      `Your word is: "${word}".`,
+      category ? `Category: ${category}.` : '',
+      '',
+      'Here is what other players said before you:',
+      chatHistory,
+      '',
+      'Read their clues carefully. Give ONE short clue about YOUR word that sounds like',
+      'it fits with what others are describing. Blend in. Add something new, don\'t repeat.',
+    ].filter(Boolean).join('\n');
+  }
+
+  const result = await callOpenAI(system, user, 50);
+  return result || (isFirstSpeaker
+    ? "This is something pretty common, most people know about it."
+    : "Yeah, I think I know what everyone's getting at here.");
 }
 
 async function handleAITurn(code) {
@@ -346,8 +375,9 @@ async function handleAITurn(code) {
   if (!aiPlayer || !aiPlayer.isAI) return;
 
   const word = currentId === room.spyId ? room.spyWord : room.civilianWord;
-  const recent = room.chat.slice(-12).map((m) => `${m.name}: ${m.text}`).join('\n');
-  const clue = await generateAIClue(word, recent, room.showHint ? room.category : null);
+  const recent = room.chat.slice(-20).map((m) => `${m.name}: ${m.text}`).join('\n');
+  const isFirst = room.chat.filter((m) => !m.spectator).length === 0;
+  const clue = await generateAIClue(word, recent, room.showHint ? room.category : null, isFirst);
 
   // Post as a chat message.
   const msg = {
@@ -395,25 +425,75 @@ function handleAIReady(code) {
   }, 2000);
 }
 
+async function generateAIVote(aiPlayer, aiId, room) {
+  const active = activePlayers(room);
+  const targets = active.filter((t) => t.id !== aiId);
+  if (targets.length === 0) return null;
+
+  const aiWord = aiId === room.spyId ? room.spyWord : room.civilianWord;
+  const allChat = room.chat.map((m) => `${m.name}: ${m.text}`).join('\n');
+
+  const playerList = targets.map((t) => `- ${t.name}`).join('\n');
+
+  const system = [
+    'You are a player in Word Spy, a social deduction game.',
+    'HOW IT WORKS: Everyone got a word. Most players got the SAME word. One player (the spy) got a SIMILAR but different word.',
+    'Players gave vague clues about their word. Now you must vote for who you think is the SPY.',
+    '',
+    'HOW TO DETECT THE SPY:',
+    '- The spy\'s clues will be slightly off — they describe something similar but not exactly the same thing.',
+    '- Look for clues that are too vague (trying to hide), or that subtly describe a different thing.',
+    '- If someone\'s clue doesn\'t quite fit with what everyone else is describing, they might be the spy.',
+    '',
+    'Reply with ONLY the name of the player you vote for. Nothing else.',
+  ].join('\n');
+
+  const user = [
+    `Your word was: "${aiWord}".`,
+    room.showHint && room.category ? `Category: ${room.category}.` : '',
+    '',
+    'Here is everything that was said during the discussion:',
+    allChat || '(no messages)',
+    '',
+    'These are the players you can vote for:',
+    playerList,
+    '',
+    'Who do you think is the spy? Reply with ONLY their name:',
+  ].filter(Boolean).join('\n');
+
+  const result = await callOpenAI(system, user, 20);
+  if (!result) return targets[Math.floor(Math.random() * targets.length)].id;
+
+  // Match the AI's response to an actual player name.
+  const cleaned = result.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const match = targets.find((t) => {
+    const tName = t.name.replace(/^🤖\s*/, '').toLowerCase().trim();
+    return cleaned.includes(tName) || tName.includes(cleaned);
+  });
+  return match ? match.id : targets[Math.floor(Math.random() * targets.length)].id;
+}
+
 function handleAIVotes(code) {
   const room = rooms.get(code);
   if (!room || room.state !== 'voting') return;
-  setTimeout(() => {
+  setTimeout(async () => {
     const r = rooms.get(code);
     if (!r || r.state !== 'voting') return;
     const active = activePlayers(r);
     let changed = false;
-    active.forEach((p) => {
-      if (!p.isAI || r.votes[p.id]) return;
-      // Vote for a random non-self, non-AI player.
-      const targets = active.filter((t) => t.id !== p.id && !t.isAI);
-      if (targets.length === 0) return;
-      r.votes[p.id] = targets[Math.floor(Math.random() * targets.length)].id;
-      changed = true;
-    });
-    if (changed) {
+
+    for (const p of active) {
+      if (!p.isAI || r.votes[p.id]) continue;
+      const targetId = await generateAIVote(p, p.id, r);
+      if (targetId && r.state === 'voting') {
+        r.votes[p.id] = targetId;
+        changed = true;
+      }
+    }
+
+    if (changed && r.state === 'voting') {
       broadcastRoom(code);
-      const allVoted = active.every((p) => r.votes[p.id]);
+      const allVoted = active.every((ap) => r.votes[ap.id]);
       if (allVoted) tallyVotes(code);
     }
   }, 2500);
