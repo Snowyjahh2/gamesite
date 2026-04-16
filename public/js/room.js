@@ -7,7 +7,7 @@ const el = (id) => document.getElementById(id);
 // ---------- Read intent from sessionStorage ----------
 
 const intent = sessionStorage.getItem('ws:intent');
-const storedName = sessionStorage.getItem('ws:name');
+const storedName = localStorage.getItem('ws:name') || sessionStorage.getItem('ws:name');
 const storedCode = (new URLSearchParams(location.search).get('code')
   || sessionStorage.getItem('ws:code')
   || '').toUpperCase();
