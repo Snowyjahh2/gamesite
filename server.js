@@ -58,7 +58,7 @@ function makeRoom(code, hostId, hostName, opts) {
     showHint: !!opts.showHint,
     // Public servers show up in the lobby browser.
     public: !!opts.public,
-    mode: opts.mode === 'draw' ? 'draw' : 'text',
+    mode: ['draw', 'text', 'inperson'].includes(opts.mode) ? opts.mode : 'text',
     serverName: sanitizeName(opts.serverName) || `${hostName}'s room`,
     state: 'lobby',
     round: 0,

@@ -64,6 +64,16 @@
             </label>
 
             <button class="btn btn-primary" type="submit">Play!</button>
+
+            <label class="field" style="margin-top:14px">
+              <span class="field-label">Mode</span>
+              <div class="mode-toggle">
+                <button type="button" class="mode-btn" data-mode="draw">✏️ Draw</button>
+                <button type="button" class="mode-btn active" data-mode="text">💬 Text</button>
+                <button type="button" class="mode-btn" data-mode="inperson">🏠 In Person</button>
+              </div>
+              <p class="mode-hint" id="create-mode-hint">Text chat is used to discuss clues.</p>
+            </label>
           </form>
 
           <form class="panel" id="join-panel" data-panel="join" autocomplete="off">
@@ -113,9 +123,11 @@
         <label class="field">
           <span class="field-label">Mode</span>
           <div class="mode-toggle">
-            <button type="button" class="mode-btn active" data-mode="text">💬 Text</button>
             <button type="button" class="mode-btn" data-mode="draw">✏️ Draw</button>
+            <button type="button" class="mode-btn active" data-mode="text">💬 Text</button>
+            <button type="button" class="mode-btn" data-mode="inperson">🏠 In Person</button>
           </div>
+          <p class="mode-hint" id="pub-mode-hint">Text chat is used to discuss clues.</p>
         </label>
 
         <label class="field">

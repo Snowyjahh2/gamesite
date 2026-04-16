@@ -101,6 +101,24 @@ function goJoin(code) {
   window.location.href = `room.html?code=${encodeURIComponent(c)}`;
 }
 
+// ---------- Private create mode toggle ----------
+
+let createMode = 'text';
+const modeHints = {
+  draw: 'Draw clues on a canvas for others to see.',
+  text: 'Text chat is used to discuss clues.',
+  inperson: 'All players are in the same room — talk out loud!',
+};
+
+document.querySelectorAll('#create-panel .mode-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    createMode = btn.dataset.mode;
+    document.querySelectorAll('#create-panel .mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    const hint = el('create-mode-hint');
+    if (hint) hint.textContent = modeHints[createMode] || '';
+  });
+});
+
 // ---------- Private create / join ----------
 
 el('create-panel').addEventListener('submit', (e) => {
@@ -108,7 +126,7 @@ el('create-panel').addEventListener('submit', (e) => {
   hideError();
   goCreate({
     public: false,
-    mode: 'text',
+    mode: createMode,
     maxPlayers: parseInt(sizeInput.value, 10),
     timerSecs: parseInt(timerInput.value, 10),
     showHint: el('create-hints').checked,
@@ -142,7 +160,7 @@ function renderServerList(list) {
     const full = s.playerCount >= s.maxPlayers;
     const inProgress = s.state !== 'lobby';
     const statusText = inProgress ? `Round ${s.round || 1}` : 'Waiting';
-    const modeBadge = s.mode === 'draw' ? '✏️ Draw' : '💬 Text';
+    const modeBadge = s.mode === 'draw' ? '✏️ Draw' : s.mode === 'inperson' ? '🏠 In Person' : '💬 Text';
     li.innerHTML = `
       <div class="server-meta">
         <div class="server-name">${escapeHtml(s.name || 'Room')}</div>
@@ -194,10 +212,12 @@ const pubTimerLabel = el('pub-timer-label');
 pubTimer.addEventListener('input', () => { pubTimerLabel.textContent = formatTime(+pubTimer.value); });
 
 let pubMode = 'text';
-document.querySelectorAll('.mode-btn').forEach((btn) => {
+document.querySelectorAll('#public-form .mode-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     pubMode = btn.dataset.mode;
-    document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('#public-form .mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    const hint = el('pub-mode-hint');
+    if (hint) hint.textContent = modeHints[pubMode] || '';
   });
 });
 

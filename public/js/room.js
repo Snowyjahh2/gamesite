@@ -119,8 +119,8 @@ socket.on('roomUpdate', (room) => {
   // Spectator banner — visible for actual spectators (not just preferSpectate during lobby).
   el('spectator-banner').hidden = !isSpec;
 
-  // Chat panel: only visible for public rooms
-  el('chat-panel').hidden = !room.public;
+  // Chat panel: visible for public rooms except inperson mode
+  el('chat-panel').hidden = !room.public || room.mode === 'inperson';
   updateChatMeta(room);
   renderSidePlayers(room);
   renderSpectateButton(prefSpec, isSpec);
@@ -370,6 +370,14 @@ function renderDiscussion(room, players, isHost) {
     : (isSpectator ? 'Spectating…' : `Waiting for ${currentPlayer ? currentPlayer.name : '…'}`);
 
   el('disc-host-controls').hidden = !isHost;
+
+  // Discussion subtitle per mode
+  const discSub = el('disc-subtitle');
+  if (discSub) {
+    if (room.mode === 'draw') discSub.textContent = 'Draw clues on the canvas. Don\'t give it away!';
+    else if (room.mode === 'inperson') discSub.textContent = 'Talk out loud! Give a vague clue about your word.';
+    else discSub.textContent = 'Describe your word in the chat. Don\'t give it away!';
+  }
 
   // Draw stage
   const drawStage = el('draw-stage');
