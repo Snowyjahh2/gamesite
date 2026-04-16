@@ -1091,7 +1091,7 @@ io.on('connection', (socket) => {
     }
 
     const aiId = generateAIId();
-    const usedNames = Object.values(room.players).map((p) => p.name);
+    const usedNames = Object.values(room.players).map((p) => p.name.replace(/^🤖\s*/, ''));
     const aiName = AI_NAMES.find((n) => !usedNames.includes(n)) || `Bot ${aiCount + 1}`;
 
     room.players[aiId] = {
