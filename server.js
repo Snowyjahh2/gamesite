@@ -909,6 +909,6 @@ function safeAck(ack, payload) {
 // -------------------------------------------------------------------
 
 const port = process.env.PORT || 3000;
-httpServer.listen(port, () => {
+httpServer.listen(port, '0.0.0.0', () => {
   console.log(`Word Spy listening on port ${port}`);
 });
