@@ -16,9 +16,12 @@ const io = new Server(httpServer, {
   pingInterval: 25000,
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
-// Plain health check for Render.
+// Clean URLs: /room → /room.html
+app.get('/room', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'room.html')));
+
+// Health check.
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 // -------------------------------------------------------------------

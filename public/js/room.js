@@ -13,7 +13,7 @@ const storedCode = (new URLSearchParams(location.search).get('code')
   || '').toUpperCase();
 
 if (!storedName || (!intent && !storedCode)) {
-  location.href = 'index.html';
+  location.href = '/';
 }
 
 // ---------- Socket ----------
@@ -42,7 +42,7 @@ function fail(msg) {
 }
 
 function bounceHome(delay = 1200) {
-  setTimeout(() => { location.href = 'index.html'; }, delay);
+  setTimeout(() => { location.href = '/'; }, delay);
 }
 
 socket.on('connect', () => {
@@ -60,7 +60,7 @@ socket.on('connect', () => {
   } else {
     // Either intent=join or page refresh with stored code.
     if (!storedCode) {
-      location.href = 'index.html';
+      location.href = '/';
       return;
     }
     socket.emit('joinRoom', { name: storedName, code: storedCode }, onJoined);
@@ -545,7 +545,7 @@ el('leave-btn').addEventListener('click', (e) => {
   sessionStorage.removeItem('ws:maxPlayers');
   sessionStorage.removeItem('ws:timerSecs');
   sessionStorage.removeItem('ws:showHint');
-  location.href = 'index.html';
+  location.href = '/';
 });
 
 el('copy-code').addEventListener('click', async () => {

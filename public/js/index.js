@@ -87,7 +87,7 @@ function goCreate({ public: isPublic = false, mode = 'text', serverName = '', ma
   sessionStorage.setItem('ws:public', isPublic ? '1' : '0');
   sessionStorage.setItem('ws:mode', mode);
   sessionStorage.setItem('ws:serverName', serverName);
-  window.location.href = 'room.html';
+  window.location.href = '/room';
 }
 
 function goJoin(code) {
@@ -98,7 +98,7 @@ function goJoin(code) {
   sessionStorage.setItem('ws:intent', 'join');
   localStorage.setItem('ws:name', name);
   sessionStorage.setItem('ws:code', c);
-  window.location.href = `room.html?code=${encodeURIComponent(c)}`;
+  window.location.href = `/room?code=${encodeURIComponent(c)}`;
 }
 
 // ---------- Private create mode toggle ----------
