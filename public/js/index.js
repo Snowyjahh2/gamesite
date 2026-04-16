@@ -12,9 +12,9 @@ const el = (id) => document.getElementById(id);
 // ---------- Name field (persisted) ----------
 
 const nameInput = el('your-name');
-nameInput.value = sessionStorage.getItem('ws:name') || '';
+nameInput.value = localStorage.getItem('ws:name') || '';
 nameInput.addEventListener('input', () => {
-  sessionStorage.setItem('ws:name', nameInput.value.trim());
+  localStorage.setItem('ws:name', nameInput.value.trim());
 });
 
 function requireName() {
@@ -24,7 +24,7 @@ function requireName() {
     nameInput.focus();
     return null;
   }
-  sessionStorage.setItem('ws:name', n);
+  localStorage.setItem('ws:name', n);
   return n;
 }
 
@@ -80,7 +80,7 @@ function goCreate({ public: isPublic = false, mode = 'text', serverName = '', ma
   const name = requireName();
   if (!name) return;
   sessionStorage.setItem('ws:intent', 'create');
-  sessionStorage.setItem('ws:name', name);
+  localStorage.setItem('ws:name', name);
   sessionStorage.setItem('ws:maxPlayers', String(maxPlayers));
   sessionStorage.setItem('ws:timerSecs', String(timerSecs));
   sessionStorage.setItem('ws:showHint', showHint ? '1' : '0');
@@ -96,7 +96,7 @@ function goJoin(code) {
   const c = String(code || '').trim().toUpperCase();
   if (!c || c.length < 4) return showError('Enter a room code.');
   sessionStorage.setItem('ws:intent', 'join');
-  sessionStorage.setItem('ws:name', name);
+  localStorage.setItem('ws:name', name);
   sessionStorage.setItem('ws:code', c);
   window.location.href = `room.html?code=${encodeURIComponent(c)}`;
 }
