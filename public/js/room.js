@@ -119,8 +119,8 @@ socket.on('roomUpdate', (room) => {
   // Spectator banner — visible for actual spectators (not just preferSpectate during lobby).
   el('spectator-banner').hidden = !isSpec;
 
-  // Chat panel: visible for public rooms except inperson mode
-  el('chat-panel').hidden = !room.public || room.mode === 'inperson';
+  // Chat panel: visible for text and draw modes (any room), hidden for inperson.
+  el('chat-panel').hidden = room.mode === 'inperson';
   updateChatMeta(room);
   renderSidePlayers(room);
   renderSpectateButton(prefSpec, isSpec);
